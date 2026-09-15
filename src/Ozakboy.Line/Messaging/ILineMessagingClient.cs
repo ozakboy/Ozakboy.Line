@@ -322,4 +322,142 @@ public interface ILineMessagingClient
     /// Success with a <see langword="null"/> value when nothing is linked, rather than a failure.
     /// </returns>
     Task<Result<string?>> GetRichMenuIdOfUserAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 以新選單換掉舊選單:建立、上傳圖片,再視設定設為預設、指向別名、刪除舊選單。
+    /// Replaces a rich menu with a new one: create, upload the image, then optionally make it the default, point
+    /// an alias at it, and delete the old one.
+    /// </summary>
+    /// <param name="menu">新選單的定義。The new menu's definition.</param>
+    /// <param name="image">選單圖片的位元組。The menu image's bytes.</param>
+    /// <param name="contentType"><c>image/jpeg</c> 或 <c>image/png</c>。Either <c>image/jpeg</c> or <c>image/png</c>.</param>
+    /// <param name="options">可選步驟。The optional steps.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>新選單的識別碼。The new menu's identifier.</returns>
+    /// <remarks>
+    /// <para>
+    /// LINE 沒有「就地更新選單」這回事:改版就是建一個新的再把舊的換掉,而那是四到五個 API 呼叫。
+    /// 拆開自己寫,漏掉其中一步的代價不小 —— 忘了刪舊選單會慢慢吃掉選單額度,
+    /// 圖片傳失敗卻不收回新選單則會在帳號上留下一個空白選單。
+    /// LINE has no in-place update for a rich menu: a revision means creating a new one and swapping the old one
+    /// out, which is four or five API calls. Written out by hand, a missed step costs: forgetting to delete the
+    /// old menu eats the account's menu allowance over time, and an upload failure with no rollback leaves a
+    /// blank menu on the account.
+    /// </para>
+    /// <para>
+    /// 失敗處理不對稱,而且是刻意的:<b>圖片上傳失敗會刪掉剛建的新選單</b>(沒有圖片的選單比沒有選單更糟),
+    /// 但<b>刪舊選單失敗只記錄、整體仍算成功</b>(新選單已經上線,回報失敗只會讓呼叫端重做而多出一個選單)。
+    /// The failure handling is asymmetric on purpose: <b>a failed image upload deletes the menu just created</b>,
+    /// since a menu without an image is worse than no menu, while <b>a failed deletion of the old menu is only
+    /// logged and the call still succeeds</b>, since the new menu is already live and reporting a failure would
+    /// have the caller redo it and end up with one menu more.
+    /// </para>
+    /// </remarks>
+    Task<Result<string>> ReplaceRichMenuAsync(
+        LineRichMenu menu,
+        byte[] image,
+        string contentType,
+        LineRichMenuReplaceOptions? options = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 建立圖文選單別名。
+    /// Creates a rich menu alias.
+    /// </summary>
+    /// <param name="aliasId">別名識別碼。The alias identifier.</param>
+    /// <param name="richMenuId">要指向的選單識別碼。The menu identifier to point at.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 成功或失敗;別名已存在時 LINE 回 400,那時要用 <see cref="UpdateRichMenuAliasAsync"/>。
+    /// Success or failure; LINE answers 400 when the alias already exists, which is
+    /// <see cref="UpdateRichMenuAliasAsync"/>'s case.
+    /// </returns>
+    Task<Result> CreateRichMenuAliasAsync(string aliasId, string richMenuId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 把既有別名改指向另一個選單。
+    /// Repoints an existing alias at another menu.
+    /// </summary>
+    /// <param name="aliasId">別名識別碼。The alias identifier.</param>
+    /// <param name="richMenuId">新的選單識別碼。The new menu identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> UpdateRichMenuAliasAsync(string aliasId, string richMenuId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 刪除圖文選單別名。
+    /// Deletes a rich menu alias.
+    /// </summary>
+    /// <param name="aliasId">別名識別碼。The alias identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> DeleteRichMenuAliasAsync(string aliasId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢單一別名目前指向哪一個選單。
+    /// Reads which menu one alias currently points at.
+    /// </summary>
+    /// <param name="aliasId">別名識別碼。The alias identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 別名內容;別名不存在時為 <see cref="ErrorCategory.NotFound"/> 的失敗。這一點與圖文選單連結的查詢不同
+    /// ——「沒有連結」是使用者的正常狀態,「別名不存在」通常是設定漏了一步。
+    /// The alias. When it does not exist this is an <see cref="ErrorCategory.NotFound"/> failure, unlike a menu
+    /// link lookup: having no link is a normal state for a user, whereas a missing alias usually means a setup
+    /// step was skipped.
+    /// </returns>
+    Task<Result<LineRichMenuAlias>> GetRichMenuAliasAsync(string aliasId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 列出所有圖文選單別名。
+    /// Lists every rich menu alias.
+    /// </summary>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>別名清單。The aliases.</returns>
+    Task<Result<IReadOnlyList<LineRichMenuAlias>>> GetRichMenuAliasListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 批次把圖文選單連結到多位使用者。
+    /// Links a rich menu to several users at once.
+    /// </summary>
+    /// <param name="userIds">
+    /// 使用者識別碼,1 到 <see cref="LineMessagingLimits.RichMenuBulkUsers"/> 位。
+    /// User identifiers, between one and <see cref="LineMessagingLimits.RichMenuBulkUsers"/>.
+    /// </param>
+    /// <param name="richMenuId">選單識別碼。The menu identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    /// <remarks>
+    /// LINE 的處理是<b>非同步</b>的:回 2xx 只代表工作收下了,不代表每個人的選單都換好了。
+    /// 換完沒有事件通知,要確認得逐一問 <see cref="GetRichMenuIdOfUserAsync"/>。
+    /// LINE processes this <b>asynchronously</b>: a 2xx means the job was accepted, not that everyone's menu has
+    /// changed. No event announces completion, and confirming means asking
+    /// <see cref="GetRichMenuIdOfUserAsync"/> one user at a time.
+    /// </remarks>
+    Task<Result> LinkRichMenuToUsersAsync(IReadOnlyList<string> userIds, string richMenuId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 批次解除多位使用者的圖文選單連結。
+    /// Unlinks several users' rich menus at once.
+    /// </summary>
+    /// <param name="userIds">
+    /// 使用者識別碼,1 到 <see cref="LineMessagingLimits.RichMenuBulkUsers"/> 位。
+    /// User identifiers, between one and <see cref="LineMessagingLimits.RichMenuBulkUsers"/>.
+    /// </param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> UnlinkRichMenuFromUsersAsync(IReadOnlyList<string> userIds, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 驗證圖文選單定義,但不建立。
+    /// Validates a rich menu definition without creating it.
+    /// </summary>
+    /// <param name="richMenu">選單定義。The menu definition.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 定義合規時為成功;不合規時的失敗帶有 LINE 指出的欄位(見 <see cref="LineErrorDataKeys.LineDetails"/>)。
+    /// Success when the definition conforms; a failure otherwise, carrying the fields LINE named in
+    /// <see cref="LineErrorDataKeys.LineDetails"/>.
+    /// </returns>
+    Task<Result> ValidateRichMenuAsync(LineRichMenu richMenu, CancellationToken cancellationToken = default);
 }

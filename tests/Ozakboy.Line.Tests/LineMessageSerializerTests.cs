@@ -151,8 +151,13 @@ public sealed class LineMessageSerializerTests
     [TestMethod]
     public void QuickReply_IsWrittenWhenSet()
     {
-        using var quickReply = JsonDocument.Parse("""{"items":[{"type":"action","action":{"type":"message","label":"好","text":"好"}}]}""");
-        var json = Serialize(new TextMessage("要嗎?") { QuickReply = quickReply.RootElement });
+        // 快速回覆的完整測試在 LineQuickReplyTests;這裡只確認它掛在訊息上時會被寫出來。
+        var quickReply = new Messaging.LineQuickReply
+        {
+            Items = { new Messaging.LineQuickReplyItem(new Messaging.Actions.MessageAction("好") { Label = "好" }) },
+        };
+
+        var json = Serialize(new TextMessage("要嗎?") { QuickReply = quickReply });
 
         Assert.AreEqual(
             "message",

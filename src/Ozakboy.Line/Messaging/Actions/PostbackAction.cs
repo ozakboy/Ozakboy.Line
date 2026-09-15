@@ -14,6 +14,18 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// </remarks>
 public sealed class PostbackAction : LineAction
 {
+    /// <summary>收起圖文選單。Closes the rich menu.</summary>
+    public const string InputOptionCloseRichMenu = "closeRichMenu";
+
+    /// <summary>展開圖文選單。Opens the rich menu.</summary>
+    public const string InputOptionOpenRichMenu = "openRichMenu";
+
+    /// <summary>打開鍵盤,可搭配 <see cref="FillInText"/> 預填文字。Opens the keyboard, optionally pre-filled with <see cref="FillInText"/>.</summary>
+    public const string InputOptionOpenKeyboard = "openKeyboard";
+
+    /// <summary>打開語音輸入。Opens voice input.</summary>
+    public const string InputOptionOpenVoice = "openVoice";
+
     /// <summary>
     /// 建立回傳資料的動作。
     /// Creates a postback action.
@@ -50,6 +62,26 @@ public sealed class PostbackAction : LineAction
     /// </summary>
     public string? DisplayText { get; }
 
+    /// <summary>
+    /// 按下之後鍵盤與圖文選單要怎麼反應;不設定時維持原狀。
+    /// What the keyboard and the rich menu do after the tap; without it nothing changes.
+    /// </summary>
+    /// <remarks>
+    /// 值必須是 <see cref="InputOptionCloseRichMenu"/>、<see cref="InputOptionOpenRichMenu"/>、
+    /// <see cref="InputOptionOpenKeyboard"/> 或 <see cref="InputOptionOpenVoice"/> 其中之一。
+    /// The value must be one of <see cref="InputOptionCloseRichMenu"/>, <see cref="InputOptionOpenRichMenu"/>,
+    /// <see cref="InputOptionOpenKeyboard"/>, or <see cref="InputOptionOpenVoice"/>.
+    /// </remarks>
+    public string? InputOption { get; set; }
+
+    /// <summary>
+    /// 鍵盤打開時預先填入的文字;只有 <see cref="InputOption"/> 為
+    /// <see cref="InputOptionOpenKeyboard"/> 時 LINE 才看這個欄位。
+    /// The text pre-filled into the keyboard. LINE reads this only when <see cref="InputOption"/> is
+    /// <see cref="InputOptionOpenKeyboard"/>.
+    /// </summary>
+    public string? FillInText { get; set; }
+
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)
     {
@@ -58,6 +90,16 @@ public sealed class PostbackAction : LineAction
         if (!string.IsNullOrWhiteSpace(DisplayText))
         {
             writer.WriteString("displayText", DisplayText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(InputOption))
+        {
+            writer.WriteString("inputOption", InputOption);
+        }
+
+        if (!string.IsNullOrWhiteSpace(FillInText))
+        {
+            writer.WriteString("fillInText", FillInText);
         }
     }
 }

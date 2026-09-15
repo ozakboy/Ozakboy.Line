@@ -69,6 +69,80 @@ and webhook endpoint on top.
   本地 id_token 驗證。`MapLineWebhook()` 掛上一個先驗簽再解析的端點 —— 簽章不對回 401、內容讀不懂回 400
   —— 並隔離每個事件的處理常式,一個失敗不會讓 LINE 重送整批。
 
+- **`Ozakboy.Line` — quick replies and the full action surface.** `LineQuickReply` and `LineQuickReplyItem`
+  replace the raw `JsonElement` that `LineMessage.QuickReply` used to be, with the thirteen-button cap enforced
+  before anything is sent — LINE rejects the whole message rather than showing the first thirteen. Actions now
+  cover LINE's entire set: `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`,
+  `ClipboardAction` and `RichMenuSwitchAction` join the existing four, `UriAction` gained `AltUriDesktop` for
+  addresses only a phone understands, and `PostbackAction` gained `InputOption` and `FillInText`.
+  **`Ozakboy.Line` — 快速回覆與完整的動作型別。** `LineQuickReply` 與 `LineQuickReplyItem` 取代了
+  `LineMessage.QuickReply` 原本的 `JsonElement`,13 顆按鈕的上限在送出前就檢查 ——
+  超量時 LINE 是整則訊息退回,不是只顯示前 13 個。動作補齊 LINE 全部型別:
+  `DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、
+  `RichMenuSwitchAction` 加入既有的四種,`UriAction` 多了給桌機用的 `AltUriDesktop`,
+  `PostbackAction` 多了 `InputOption` 與 `FillInText`。
+
+- **`Ozakboy.Line` — message templates.** `LineMessageTemplate` stores the JSON of a message array rather than a
+  piece of plain text, so images, Flex layouts and quick replies all fit into a template.
+  `LineTemplateVariables.Extract` finds its `{{variable}}` placeholders and `LineTemplateRenderer` substitutes
+  them, escaping every value for JSON first — without which one quotation mark in a display name breaks the whole
+  document. `ILineTemplateStore` ships with in-memory and JSON-file implementations, the latter writing
+  atomically through a temporary file and serialising reads and writes behind one lock.
+  **`Ozakboy.Line` — 訊息範本。** `LineMessageTemplate` 存的是訊息陣列的 JSON 而不是一段純文字,
+  圖片、Flex 版面與快速回覆因此都能存進範本。`LineTemplateVariables.Extract` 找出 `{{變數}}` 佔位符,
+  `LineTemplateRenderer` 代入它們,而且值一律先做 JSON 跳脫 ——
+  少了這一步,一個暱稱裡的引號就足以把整份 JSON 弄壞。`ILineTemplateStore` 附記憶體與 JSON 檔兩種實作,
+  後者寫入原子化(先寫暫存檔再換檔),讀寫共用一把鎖。
+
+- **`Ozakboy.Line` — keyword auto reply.** A rule is data rather than code: `LineAutoReplyRule` goes into a store
+  and can be edited from an admin page. Six match modes — `Exact`, `StartsWith`, `Contains`, `Regex`, plus
+  `Follow` for the welcome message and `Fallback` for anything no rule matched — are ordered by priority and then
+  by how specific the match is, so one loose `Contains` cannot quietly swallow a pile of precise `Exact` rules.
+  Regular expressions run under a 100-millisecond cap and a timeout counts as no match rather than throwing.
+  `MapLineWebhook` gained an overload taking `LineWebhookEndpointOptions`, whose `AutoReply` runs the rules
+  before the handler and leaves the outcome in `HttpContext.Items`.
+  **`Ozakboy.Line` — 關鍵字自動回覆。** 規則是資料而不是程式碼:`LineAutoReplyRule` 存進 store,
+  由後台編輯。六種比對方式 —— `Exact`、`StartsWith`、`Contains`、`Regex`,加上歡迎訊息用的 `Follow`
+  與沒有規則命中時用的 `Fallback` —— 先依優先序、同分再依明確程度排序,
+  一條寬鬆的 `Contains` 因此吃不掉一堆精準的 `Exact`。正規表示式的比對有 100 毫秒上限,
+  逾時視為不符而不是擲出例外。`MapLineWebhook` 多了一個收 `LineWebhookEndpointOptions` 的多載,
+  它的 `AutoReply` 會在處理常式之前跑規則,結果放進 `HttpContext.Items`。
+
+- **`Ozakboy.Line` — rich menu replacement, aliases and bulk links.** `ReplaceRichMenuAsync` runs create, upload,
+  set-as-default, repoint-the-alias and delete-the-old-menu as one call, with deliberately asymmetric failure
+  handling: a failed image upload deletes the menu just created, while a failed deletion of the old menu is only
+  logged. Aliases get create, update, delete, read and list; `LinkRichMenuToUsersAsync` and
+  `UnlinkRichMenuFromUsersAsync` cover the bulk endpoints up to 500 users, and `ValidateRichMenuAsync` checks a
+  definition without creating anything.
+  **`Ozakboy.Line` — 圖文選單以新換舊、別名與批次連結。** `ReplaceRichMenuAsync` 把建立、上傳圖片、
+  設預設、指向別名、刪舊選單串成一次呼叫,失敗處理刻意不對稱:圖片上傳失敗會刪掉剛建的新選單,
+  刪舊選單失敗則只記錄。別名有建立、更新、刪除、查詢與列表;`LinkRichMenuToUsersAsync` 與
+  `UnlinkRichMenuFromUsersAsync` 對應批次端點(單次 500 人),`ValidateRichMenuAsync` 驗定義而不建立。
+
+- **`Ozakboy.Line.AspNetCore` — `PublicOrigin`.** Naming the site's public address makes `redirect_uri` come from
+  it rather than from the incoming request, at both the authorisation step and the token exchange. Behind a
+  reverse proxy that does not set `X-Forwarded-Proto`, the derived address reads `http://` while the LINE
+  Developers console has `https://` registered, and LINE — which compares verbatim — answers a 400 that says
+  nothing about what differs.
+  **`Ozakboy.Line.AspNetCore` — `PublicOrigin`。** 明確指定站台的對外網址之後,
+  授權與換權杖兩個階段的 `redirect_uri` 都以它組出來,不再從當前請求推導。
+  反向代理沒設 `X-Forwarded-Proto` 時,推導出來的是 `http://` 而後台登記的是 `https://`,
+  而 LINE 是逐字比對的,回的 400 一個字都不會說是哪裡不一樣。
+
+- **`Ozakboy.Line.Mcp` — a new package.** MCP tools over the above, so an outside AI can read the account's
+  state, draft broadcasts, edit rules and templates, and replace rich menus. The rule is that the AI cannot send:
+  in the default Review mode every sending tool writes to an outbox as `PendingReview`, the approve-and-send API
+  belongs to the host and is never a tool, and a daily cap limits how much can be queued.
+  `UseLineMcpKeyGate()` guards the whole subtree with a key carried in the path, compared in fixed time and
+  answering a clean JSON 404 on any failure — 401 or 403 would confirm the endpoint exists.
+  `WithLineTools()` adds the same tools to an MCP server a host already has.
+  **`Ozakboy.Line.Mcp` — 新套件。** 把上述功能包成 MCP 工具,讓外部 AI 查詢帳號狀態、擬廣播、
+  改規則與範本、替換圖文選單。鐵則是 AI 不得直接發送:預設的待審模式下,
+  所有送出類工具只寫進待發佇列(`PendingReview`),核准並送出的 API 屬於宿主、永遠不是工具,
+  另有每日建立上限。`UseLineMcpKeyGate()` 以路徑上的金鑰罩住整個子樹,定時比較,
+  失敗一律回乾淨的 JSON 404 —— 回 401 或 403 等於確認這個端點存在。
+  `WithLineTools()` 可把同一組工具加進宿主既有的 MCP server。
+
 ### Notes
 
 - **Expected failures are `Result<T>`, not exceptions.** Every `line.*` error code listed in the README is a
@@ -89,6 +163,26 @@ and webhook endpoint on top.
   named HTTP clients. `AddLineLogin` and `AddLineMessaging` register one each.
   **Login channel 與 Messaging channel 是兩個不同的頻道**,憑證分開,具名 HTTP 用戶端也分開;
   `AddLineLogin` 與 `AddLineMessaging` 各註冊一個。
+
+- **An outside AI proposes; a person approves.** `Ozakboy.Line.Mcp` defaults to Review mode, where nothing leaves
+  the building until the host calls `ILineMcpOutboxService.ApproveAndSendAsync` — an API that is deliberately not
+  exposed as an MCP tool, because a review queue is worth something only while whoever proposes cannot approve.
+  Direct mode sends straight away and still writes an outbox record, since without one there is nowhere
+  afterwards to find out who sent a message, when, or why.
+  **外部 AI 提案,人核准。** `Ozakboy.Line.Mcp` 預設為待審模式,在宿主呼叫
+  `ILineMcpOutboxService.ApproveAndSendAsync` 之前什麼都不會送出 —— 那個 API 刻意不做成 MCP 工具,
+  因為待審制度的價值只在「提案的一方沒有核准權」時才成立。直接模式會立刻送出,但仍然寫一筆待發紀錄,
+  否則事後沒有任何地方查得出訊息是誰、什麼時候、為什麼發的。
+
+- **The MCP package is the one listed exception to the dependency policy.** It takes
+  `ModelContextProtocol.AspNetCore`, the official C# SDK maintained by the modelcontextprotocol organisation
+  together with Microsoft. MCP is a versioned wire protocol, and a hand-rolled implementation would fall behind
+  every revision — visible as a connector that attaches and then lists no tools. The core and integration
+  packages are unaffected.
+  **MCP 套件是相依政策的唯一明列例外。** 它相依 `ModelContextProtocol.AspNetCore`,
+  由 modelcontextprotocol 組織與 Microsoft 共同維護的官方 C# SDK。MCP 是一份有版本的線路協定,
+  自己實作等於維護一份會隨協定改版而落後的實作 —— 落後的症狀是連接器連得上但工具清單是空的。
+  核心與整合兩個套件不受影響。
 
 [Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/ozakboy/Ozakboy.Line/releases/tag/v0.1.0

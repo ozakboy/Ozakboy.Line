@@ -54,11 +54,23 @@ public sealed class LineLoginAuthenticationHandler : OAuthHandler<LineLoginAuthe
     /// Builds the authorization URL to LINE, with its own parameters appended.
     /// </summary>
     /// <param name="properties">認證屬性。The authentication properties.</param>
-    /// <param name="redirectUri">回呼位址。The callback address.</param>
+    /// <param name="redirectUri">
+    /// 由基底類別從當前請求推導出來的回呼位址;設了
+    /// <see cref="LineLoginAuthenticationOptions.PublicOrigin"/> 時會被換掉。
+    /// The callback address the base class derived from the incoming request, replaced when
+    /// <see cref="LineLoginAuthenticationOptions.PublicOrigin"/> is set.
+    /// </param>
     /// <returns>完整的授權網址。The complete authorization URL.</returns>
     protected override string BuildChallengeUrl(AuthenticationProperties properties, string redirectUri)
     {
         ArgumentNullException.ThrowIfNull(properties);
+
+        // 回呼網址在交給基底類別之前就換掉。基底類別把這個值原樣寫進授權網址的 redirect_uri,
+        // 之後再改就來不及了 —— 使用者的瀏覽器已經帶著舊的值出發了。
+        // The callback address is swapped before the base class sees it: the base writes this value into the
+        // authorization URL's redirect_uri as it stands, and changing it afterwards is too late — the user's
+        // browser has already left with the old one.
+        redirectUri = Options.ResolveRedirectUri(Request.PathBase.Value ?? string.Empty, redirectUri);
 
         var nonce = CreateNonce();
 
@@ -88,6 +100,38 @@ public sealed class LineLoginAuthenticationHandler : OAuthHandler<LineLoginAuthe
         }
 
         return url;
+    }
+
+    /// <summary>
+    /// 以授權碼換權杖,並確保 <c>redirect_uri</c> 與授權階段送出的那一個完全相同。
+    /// Exchanges the authorization code for tokens, with the same <c>redirect_uri</c> that went out at the
+    /// authorisation step.
+    /// </summary>
+    /// <param name="context">換權杖的內容。The code exchange context.</param>
+    /// <returns>權杖端點的回應。The token endpoint's response.</returns>
+    /// <remarks>
+    /// OAuth 要求兩個階段的 <c>redirect_uri</c> 逐字相同。只改授權階段而不改這裡,使用者會順利授權完畢,
+    /// 卻在換權杖那一步收到 <c>invalid_grant</c> —— 那比「一開始就被擋下」難查得多,
+    /// 因為畫面上看得到的每一步都成功了。
+    /// OAuth requires the two steps' <c>redirect_uri</c> values to be identical. Changing only the authorisation
+    /// step leaves the user authorising successfully and then hitting <c>invalid_grant</c> at the exchange —
+    /// harder to track down than being refused up front, because every visible step succeeded.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="context"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="context"/> is <see langword="null"/>.
+    /// </exception>
+    protected override Task<OAuthTokenResponse> ExchangeCodeAsync(OAuthCodeExchangeContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (string.IsNullOrWhiteSpace(Options.PublicOrigin))
+        {
+            return base.ExchangeCodeAsync(context);
+        }
+
+        var redirectUri = Options.ResolveRedirectUri(Request.PathBase.Value ?? string.Empty, context.RedirectUri);
+        return base.ExchangeCodeAsync(new OAuthCodeExchangeContext(context.Properties, context.Code, redirectUri));
     }
 
     /// <summary>

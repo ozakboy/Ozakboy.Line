@@ -1,0 +1,51 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+
+    <!-- 執行器選擇與理由同核心測試專案,見該 csproj 的說明。 -->
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!--
+    Microsoft.AspNetCore.TestHost:金鑰閘是中介層,要驗的是「錯金鑰回什麼、對金鑰之後路徑被改寫成什麼」,
+    那只有真的起一個管線才驗得到 —— 直接呼叫中介層的 InvokeAsync 驗不到它在 UseRouting 之前的位置是否正確。
+    Microsoft.AspNetCore.TestHost: the key gate is middleware, and what needs verifying is what a wrong key
+    answers and what path a right key rewrites to. Only a real pipeline shows that; calling the middleware's
+    InvokeAsync directly cannot verify where it sits relative to UseRouting.
+  -->
+  <ItemGroup>
+    <PackageReference Include="MSTest.TestAdapter" Version="4.0.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.0.2" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.1.0" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ozakboy.Line.Mcp\Ozakboy.Line.Mcp.csproj" />
+  </ItemGroup>
+
+  <!--
+    假的 ILineMessagingClient 從核心測試專案連結過來,而不是再寫一份。
+    那個介面有三十幾個成員,兩份實作遲早會在其中一份漏掉一個新成員的行為,
+    而漏掉的那一個在測試裡會安靜地擲例外或回一個沒人預期的成功。
+    The fake ILineMessagingClient is linked in from the core test project rather than written twice. The interface
+    has some thirty-odd members, and two implementations eventually disagree about one of them — with the one
+    that was missed either throwing quietly or answering an unexpected success inside a test.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Ozakboy.Line.Tests\TestSupport\FakeLineMessagingClient.cs" Link="TestSupport\FakeLineMessagingClient.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <Using Include="Ozakboy.Core.Abstractions" />
+    <Using Include="Ozakboy.Line" />
+    <Using Include="Ozakboy.Line.Mcp" />
+    <Using Include="Ozakboy.Line.Mcp.Outbox" />
+    <Using Include="Ozakboy.Line.Mcp.Tools" />
+  </ItemGroup>
+
+</Project>

@@ -2,7 +2,7 @@
 
 > 建立日期:2026-09-15(claude-harness 標準架構,起手式比照 `Ozakboy.Http`)。全域規範(語言、C# 慣例、機密、禁令)見 `~/.claude/CLAUDE.md`;**發佈流程(`uplog`)一律走 `nuget-release` skill**,此檔只放本專案特有內容。
 >
-> NuGet 套件 ID:**`Ozakboy.Line`**(核心)與 **`Ozakboy.Line.AspNetCore`**(整合)。定位:LINE Login + Messaging API + Webhook 的 .NET 用戶端,附 ASP.NET Core 認證方案與 webhook 端點。程式碼抽取自幼明燈(`D:\程式專案\個人專案\YouMingDeng`)的實戰經驗,但兩邊不共用程式碼。
+> NuGet 套件 ID:**`Ozakboy.Line`**(核心)、**`Ozakboy.Line.AspNetCore`**(整合)與 **`Ozakboy.Line.Mcp`**(MCP 工具組)。定位:LINE Login + Messaging API + Webhook 的 .NET 用戶端,附 ASP.NET Core 認證方案與 webhook 端點。程式碼抽取自幼明燈(`D:\程式專案\個人專案\YouMingDeng`)的實戰經驗,但兩邊不共用程式碼。
 
 ## ⛔ 鐵則 — 不開分支,一律在 `main` 上工作
 
@@ -21,6 +21,11 @@
   - **不准加 Newtonsoft.Json。** JSON 一律 `System.Text.Json`,共用設定在 `LineJson.Options`。
   - 測試專案走 MSTest 4.x + Microsoft.Testing.Platform,**不走 VSTest**(那條路徑會遞移帶進 Newtonsoft.Json);repo 根目錄的 `global.json` 的 `test.runner` 是關鍵。
   - 刻意不引用 `Microsoft.SourceLink.GitHub`(SDK 內建,外掛套件會帶進有安全通報的相依)。
+  - **相依政策的唯一明列例外:`Ozakboy.Line.Mcp` 可以相依 `ModelContextProtocol.AspNetCore`(2.2.0)。**
+    它是 MCP 的官方 C# SDK,由 modelcontextprotocol 組織與 Microsoft 共同維護。破例的理由是 MCP 是一份
+    **有版本的線路協定**(JSON-RPC over Streamable HTTP),自己實作等於自己維護一份會隨協定改版而落後的實作,
+    而落後的症狀是「連接器連得上但工具清單是空的」。這個例外**只適用於 Mcp 專案**,
+    核心與 AspNetCore 兩個套件的相依政策不變(改動時請確認沒有把這條相依滲進去)。
 - 建置品質:`TreatWarningsAsErrors` + `AnalysisLevel=latest-all` + `EnforceCodeStyleInBuild` + `Features=strict`(在 `Directory.Build.props`)。**主函式庫零警告**;測試專案保留分析器但不因警告中斷。
 - XML doc:所有 public / internal 成員**中英雙語(先中後英)**;程式碼註解繁體中文(台灣用語),識別字英文。
 
@@ -40,11 +45,22 @@ Ozakboy.Line/
       Actions/    LineAction 與四種具體動作 + 轉換器
       RichMenu/   LineRichMenu / Size / Bounds / Area / Info
     Webhook/      LineWebhookSignature / LineWebhookParser / 事件模型 / 型別常數
+    Templates/    LineMessageTemplate / LineTemplateVariables / LineTemplateRenderer / store 與 DI
+    AutoReply/    LineAutoReplyRule / Matcher / Service / Outcome / store 與 DI
+    Storage/      JsonFileStore(internal,原子寫入 + 讀寫鎖)/ LineStoreIds
   src/Ozakboy.Line.AspNetCore/          整合(PackageId=Ozakboy.Line.AspNetCore)
     LineLoginAuthentication{Defaults,Options,Handler,Extensions}.cs  LineClaimTypes.cs
     Webhook/      LineWebhookHttpRequestExtensions / LineWebhookEndpointRouteBuilderExtensions
+                  LineWebhookEndpointOptions / LineWebhookItems
+  src/Ozakboy.Line.Mcp/                 MCP 工具組(PackageId=Ozakboy.Line.Mcp)
+    LineMcp{Options,SendMode,Json,Messages,RichMenu,DailyLimit,StoreOptions,HttpClientNames}.cs
+    LineMcp{ServiceCollection,ServerBuilder,ApplicationBuilder,EndpointRouteBuilder}Extensions.cs
+    LineMcp{KeyGate,WellKnownNotFound}Middleware.cs
+    Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / Service
+    Tools/        Line{Info,Send,Outbox,RichMenu,AutoReply,Template}Tools
   tests/Ozakboy.Line.Tests/             核心測試(離線)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
+  tests/Ozakboy.Line.Mcp.Tests/         MCP 測試(工具直接 new + TestHost 驗金鑰閘,離線)
 ```
 
 ## 驗證指令(改完必跑)
@@ -58,12 +74,12 @@ Ozakboy.Line/
 ## 發佈(`uplog`)— 走 nuget-release skill,本專案參數
 
 - sln:`Ozakboy.Line.sln`
-- csproj(兩個都要打包):`src/Ozakboy.Line/Ozakboy.Line.csproj`、`src/Ozakboy.Line.AspNetCore/Ozakboy.Line.AspNetCore.csproj`
-- **版號只改一處**:`Directory.Build.props` 的 `<VersionPrefix>`(兩個套件同版號);`Ozakboy.Line.AspNetCore` 對核心是 `ProjectReference`,打包時會自動轉成同版號的 `PackageReference`
+- csproj(三個都要打包):`src/Ozakboy.Line/Ozakboy.Line.csproj`、`src/Ozakboy.Line.AspNetCore/Ozakboy.Line.AspNetCore.csproj`、`src/Ozakboy.Line.Mcp/Ozakboy.Line.Mcp.csproj`
+- **版號只改一處**:`Directory.Build.props` 的 `<VersionPrefix>`(三個套件同版號);`Ozakboy.Line.AspNetCore` 與 `Ozakboy.Line.Mcp` 對核心都是 `ProjectReference`,打包時會自動轉成同版號的 `PackageReference`
 - 產物:`artifacts/`(或各專案 `bin/Release/`)的 `.nupkg` 與 `.snupkg`
 - GitHub Release repo:`ozakboy/Ozakboy.Line`
 - secrets:**共用** `D:\程式專案\Ozakboy_GitHub\.claude\secrets.local.json`,由 `../publish-package.ps1` 讀取(**勿讀出內容**)
-- 每次發版必同步:兩個 csproj 的 `PackageReleaseNotes`(英文)、`CHANGELOG.md`(中英雙語)、README 有提到版號之處
+- 每次發版必同步:三個 csproj 的 `PackageReleaseNotes`(英文)、`CHANGELOG.md`(中英雙語)、README 有提到版號之處
 - 發新套件或加主要功能後,同步 harness `dotnet-packages` skill 的對照表(nuget-release 第 12 步)
 
 ## 公開 API 契約(動到就是 Major / Minor,不可順手改)
@@ -78,6 +94,17 @@ Ozakboy.Line/
 - **id_token 驗不過 = 整個登入失敗**,核心的 `CompleteLoginAsync` 與整合的 `CreateTicketAsync` 兩邊都是。
 - **webhook 端點的狀態碼是契約**:驗簽失敗 401、解析失敗 400、其餘一律 200(含處理常式擲例外與零事件的驗證請求)。
 - `LineMessage` / `LineAction` 只允許本組件內繼承(改寫輸出的成員是 internal);對外的擴充點是 `RawMessage` / `RawAction` 與 `*RawJsonAsync`。
+- **快速回覆上限 13 顆按鈕**(`LineMessagingLimits.MaxQuickReplyItems`),`0` 或 `>13` 一律在送出前失敗;**超量時 LINE 是整則訊息退回**,不是只顯示前 13 個。零顆也算失敗,不當成「沒設定」。
+- **`ReplaceRichMenuAsync` 的失敗處理是契約,而且刻意不對稱**:圖片上傳失敗會**刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟,而且佔額度);刪舊選單失敗**只記錄、整體仍回成功**(新選單已上線,回失敗只會讓呼叫端重做而多出一個選單)。設預設失敗則回失敗但**不**刪新選單。
+- **自動回覆的挑選順序是契約**:先 `Priority` 升冪,同分再依明確程度 `Exact` > `StartsWith` > `Contains` > `Regex`。`Follow` 與 `Fallback` **不參與一般比對**,由 `FindFirst` 另外取;`Fallback` 只在其他規則都沒命中時才用,不參與優先序比較。
+- **正規表示式比對逾時(100 ms)或表示式無效一律視為「不符」**,不擲出例外 —— 一條寫壞的規則不得讓 webhook 回非 2xx,那會讓 LINE 重送整批。
+- **範本渲染的值一律先做 JSON 字串跳脫再替換**;缺變數是失敗(`line.validation.missing_template_variables`)而**不是**留著 `{{name}}` 送出去。
+- **`LineWebhookItems.AutoReplyOutcome` 的鍵名字串是契約**;自動回覆失敗時**不放值**(免得宿主把失敗誤讀成「已經回過了」)。
+- **`LineLoginAuthenticationOptions.PublicOrigin` 必須同時影響授權與換權杖兩個階段。** OAuth 要求兩次的 `redirect_uri` 逐字相同,只改一邊的結果是「授權成功但換權杖失敗」。
+- **MCP 的待審制度是契約,不可放寬**:預設 `SendMode = Review`;`ILineMcpOutboxService` 的核准 / 退回 / 取消**永遠不得暴露成 MCP 工具**;所有送出類工具兩種模式都要寫一筆待發紀錄(直接模式**先送再記**,免得留下「已送出」的假紀錄);每日建立上限以 **CreatedAt** 計數而非送出數。
+- **MCP 待發項目狀態只往前走**:`PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected` / `Canceled`,已送出的不得回到待審(能回到待審 = 同一則訊息可能被核准兩次)。
+- **MCP 金鑰閘驗證失敗一律回 404**,不得改成 401/403(那等於確認端點存在);未設 `ApiKey` = 功能關閉、整個子樹 404;比對必須用 `CryptographicOperations.FixedTimeEquals`。
+- **MCP 工具名稱(`line_*`)是契約**:外部 AI 的提示詞與流程綁在上面,發佈後不改名。要表達新能力請加新工具。
 
 ## 本專案特有規則(踩坑紀錄)
 
@@ -91,4 +118,11 @@ Ozakboy.Line/
 - **認證處理器的 nonce 必須在呼叫 `base.BuildChallengeUrl` 之前放進 `properties.Items`**,因為基底類別在那個方法裡就把 properties 序列化成 state 了;之後再放的東西不會出門。
 - **遠端認證失敗的預設行為是把例外往外丟**,測試(與正式站)要設 `Events.OnRemoteFailure` 才看得到狀態碼。
 - **`LineRichMenuArea.Action` 是 `required`**:不給預設動作,因為「忘了設定的區塊安靜地做某件事」比編譯錯誤難查得多。
+- **`LineRichMenu.Areas` 是沒有 setter 的集合屬性**,`JsonSerializer` 預設不會去填它:反序列化出來的選單「名稱與尺寸都對、但一個區塊都沒有」,而 LINE 照收不誤,使用者看到的是一張按不動的圖。MCP 套件因此逐欄位手動讀(`LineMcpRichMenu.Parse`),不走 `JsonSerializer`。
+- **MCP 的兩道閘必須在 `UseRouting` 之前。** 路由一旦比對完成,中介層再改寫路徑也沒有用 —— 端點早就選好了。放錯位置的症狀是「金鑰對不對都一樣,一律 404」,而那看起來像是金鑰設錯。
+- **`UseLineMcpWellKnownNotFound()` 攔的是整個 `/.well-known` 子樹。** 日後要放 `security.txt`、`assetlinks.json` 這類資源,得在這道閘**之前**處理掉,否則會被無聲吃掉 —— 檔案明明在磁碟上、網址卻回 404,是個很難聯想到中介層的症狀。
+- **`ModelContextProtocol` 的 `IMcpServerBuilder` 在 `Microsoft.Extensions.DependencyInjection` 命名空間**,不在 `ModelContextProtocol.Server`。
+- **平面檔 store(`JsonFileStore<T>`)持有 `SemaphoreSlim`**,所以它與三個檔案型 store 都實作 `IDisposable`,由容器釋放;它們一律註冊為 **singleton** —— 鎖是實例層級的,每次請求各拿一個等於沒有鎖。
+- **自動回覆的 `{{displayName}}` 只在規則真的用到時才查個人檔案**,查不到以空字串代入而不讓整個回覆失敗:為了一個名字讓歡迎訊息整個發不出去,是把小事變成大事。
 - 分析器 `NoWarn`(在核心 csproj,每條都附了中文理由):`CA1054` / `CA1055` / `CA1056`(URI 維持 string,避免 `System.Uri` 正規化改掉 LINE 給的位址,尤其 redirect_uri 必須逐字相同)、`CA1716`(`to` 是 LINE 自己的欄位名)、`CA1819`(`LineContent.Bytes`)、`CA2000`(請求的擁有權轉移給 `LineHttp`)。`CA2227` 與 `CA1031` 用逐點 `#pragma` 處理,不全域關。
+- MCP 專案的 `NoWarn`:`CA1054` / `CA1055` / `CA1056`(理由同核心 —— 位址一律維持 string,MCP 工具的參數更是如此,那些值由外部 AI 提供,原樣傳遞才對得起 LINE 的逐字比對)、`CA1812`(兩個中介層由 `UseMiddleware<T>` 以反射具現化,分析器看不出來)。**`CA1716` 不在名單上**:MCP 專案裡的 `to` 是自己取的參數名,直接改名(`CountCreatedBetweenAsync` 的 `until`)而不是關規則。

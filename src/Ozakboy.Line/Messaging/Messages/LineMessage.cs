@@ -45,17 +45,16 @@ public abstract class LineMessage
     public abstract string Type { get; }
 
     /// <summary>
-    /// 快速回覆的原始 JSON;不需要時為 <see langword="null"/>。
-    /// The quick reply as raw JSON, or <see langword="null"/> when not needed.
+    /// 掛在訊息下方的快速回覆按鈕列;不需要時為 <see langword="null"/>。
+    /// The quick reply row shown under the message, or <see langword="null"/> when not needed.
     /// </summary>
     /// <remarks>
-    /// 快速回覆的結構深、變動快,而且多數呼叫端根本不用;以 <see cref="JsonElement"/> 原樣帶過去,
-    /// 需要的人自己組,不需要的人不必為它付出一整組模型的維護成本。
-    /// Quick replies are deeply structured, change often, and most callers never use them. Passing one through as
-    /// a <see cref="JsonElement"/> lets whoever needs it build its JSON, without everyone else paying the
-    /// maintenance cost of a full model for it.
+    /// 按鈕數上限由 <see cref="LineQuickReply.Validate"/> 把關,用戶端在送出之前會逐則訊息檢查一次;
+    /// 超量的快速回覆在 LINE 那頭是整則訊息被退回,不是「只顯示前幾個」。
+    /// The button limit is <see cref="LineQuickReply.Validate"/>'s business and the client checks every message
+    /// before sending: an oversized quick reply has LINE reject the whole message rather than show the first few.
     /// </remarks>
-    public JsonElement? QuickReply { get; set; }
+    public LineQuickReply? QuickReply { get; set; }
 
     /// <summary>
     /// 把整則訊息寫成一個 JSON 物件。
@@ -68,7 +67,11 @@ public abstract class LineMessage
         writer.WriteString("type", Type);
         WriteBody(writer);
 
-        if (QuickReply is { } quickReply)
+        // 空的按鈕列不輸出。這種情形在用戶端的送出路徑上會先被 Validate 擋下,
+        // 這裡的判斷是給「直接呼叫序列化」的路徑用的 —— 寫出一個空的 items 陣列會被 LINE 退回整則訊息。
+        // An empty row is not written. The client's send path stops that at Validate first; this check is for
+        // callers who serialise directly, since an empty items array has LINE reject the whole message.
+        if (QuickReply is { Items.Count: > 0 } quickReply)
         {
             writer.WritePropertyName("quickReply");
             quickReply.WriteTo(writer);

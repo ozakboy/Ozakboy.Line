@@ -1,0 +1,68 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Ozakboy.Line.Mcp</PackageId>
+    <AssemblyName>Ozakboy.Line.Mcp</AssemblyName>
+    <RootNamespace>Ozakboy.Line.Mcp</RootNamespace>
+
+    <Title>Ozakboy.Line.Mcp — 讓外部 AI 操作 LINE 官方帳號的 MCP 工具組</Title>
+    <Description>把 Ozakboy.Line 包成一組 MCP 工具,讓外部 AI(Claude、自訂連接器、任何 MCP 用戶端)查詢官方帳號狀態、擬廣播、改自動回覆規則與訊息範本、替換圖文選單。鐵則是「AI 不得直接發送」:預設的 Review 模式下,所有送出類工具只寫進待審佇列,核准與發送的 API 不暴露成工具,只留給宿主程式;每日建立數另有上限。對外掛載形式為 /mcp/line/{金鑰},金鑰驗證失敗一律回 404 而不是 401/403,不對外暴露端點存在。Exposes Ozakboy.Line as a set of MCP tools so an outside AI — Claude, a custom connector, any MCP client — can read an official account's state, draft broadcasts, edit auto reply rules and message templates, and replace rich menus. The rule is that the AI cannot send: in the default Review mode every sending tool only writes to a review queue, the approve-and-send API is not exposed as a tool and belongs to the host, and a daily cap limits how much can be queued. It mounts at /mcp/line/{key}, and a failed key check answers 404 rather than 401 or 403, so the endpoint's existence is never advertised.</Description>
+    <PackageTags>ozakboy;line;line-bot;messaging-api;mcp;model-context-protocol;ai;ai-agent;llm;tools;aspnetcore;review-queue;outbox;rich-menu;auto-reply;taiwan;dotnet;csharp</PackageTags>
+
+    <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
+    <PackageReleaseNotes>0.1.0: first release. A set of MCP tools over Ozakboy.Line for an outside AI to operate a LINE official account: bot info and quota, push, multicast and broadcast, an outbox, rich menus and their aliases, auto reply rules, and message templates. Sending tools default to Review mode, where nothing leaves the building: the payload goes into an outbox as PendingReview and the approve-and-send API is available to the host only, never as a tool. A daily cap limits how many items the AI can queue. UseLineMcpKeyGate() guards the whole /mcp/line subtree with a key carried in the path, compared in fixed time, answering a clean JSON 404 on any failure. WithLineTools() adds the same tools to an MCP server a host already has. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!--
+      CA1054 / CA1055 / CA1056:理由同核心套件 —— 位址一律維持 string,不繞一趟 System.Uri 被正規化。
+                                MCP 工具的參數更是如此:那些值由外部 AI 提供,原樣傳遞才對得起 LINE 的逐字比對。
+      CA1812:中介層類別(金鑰閘、/.well-known)由 UseMiddleware&lt;T&gt; 以反射具現化,分析器看不出來。
+      CA1848:分析器建議所有記錄都改用 LoggerMessage 委派。本套件已在需要的地方這麼做;
+              剩下的是啟動期與待審流程的低頻記錄,一次請求最多一兩筆,為它們各寫一個委派只是噪音。
+      CA2007:理由同核心套件 —— 本套件不在 UI 同步內容下執行。
+    -->
+    <NoWarn>$(NoWarn);CA1054;CA1055;CA1056;CA1812</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\logo.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!--
+    共用框架參照:中介層、端點路由與 IHttpClientFactory 都來自 ASP.NET Core 共用框架。
+    A framework reference: the middleware, endpoint routing, and IHttpClientFactory all come from the ASP.NET Core
+    shared framework.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!--
+    相依政策的「明列例外」。
+    核心套件的政策是「只允許 .NET BCL、Microsoft 官方套件與 Ozakboy.* 自研套件」,而
+    ModelContextProtocol.AspNetCore 兩者皆非 —— 它由 modelcontextprotocol 組織與 Microsoft 共同維護,
+    是 MCP 的官方 C# SDK。這裡刻意破例,理由是:MCP 是一份有版本的線路協定(JSON-RPC over Streamable HTTP),
+    自己實作等於自己維護一份會隨協定改版而落後的實作,而協定落後的症狀是「連接器連得上但工具清單是空的」。
+    這個例外只適用於本專案,核心套件與 AspNetCore 套件的相依政策不變。
+    The one listed exception to the dependency policy. The core package allows only the .NET BCL, first-party
+    Microsoft packages, and Ozakboy.* packages, and ModelContextProtocol.AspNetCore is none of those: it is the
+    official C# SDK for MCP, maintained by the modelcontextprotocol organisation together with Microsoft. The
+    exception is deliberate. MCP is a versioned wire protocol — JSON-RPC over Streamable HTTP — and implementing
+    it here would mean maintaining an implementation that falls behind every revision, where falling behind shows
+    up as a connector that attaches successfully and then lists no tools. The exception applies to this project
+    only; the core and AspNetCore packages' dependency policy is unchanged.
+  -->
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+  </ItemGroup>
+
+  <!-- 打包時 ProjectReference 會自動轉成同版號的 PackageReference。 -->
+  <ItemGroup>
+    <ProjectReference Include="..\Ozakboy.Line\Ozakboy.Line.csproj" />
+  </ItemGroup>
+
+</Project>

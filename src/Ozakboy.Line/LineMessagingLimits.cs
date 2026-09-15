@@ -30,4 +30,21 @@ public static class LineMessagingLimits
     /// The maximum number of messages in one request.
     /// </summary>
     public const int MaxMessagesPerRequest = 5;
+
+    /// <summary>
+    /// 一則訊息可掛的快速回覆按鈕數上限。
+    /// The maximum number of quick reply buttons one message can carry.
+    /// </summary>
+    /// <remarks>
+    /// 超量時 LINE 不是「只顯示前 13 個」而是整則訊息退回,所以這個上限在本地就先擋。
+    /// Going over does not mean LINE shows the first thirteen; it rejects the whole message, which is why this
+    /// limit is checked locally first.
+    /// </remarks>
+    public const int MaxQuickReplyItems = 13;
+
+    /// <summary>
+    /// 單次批次連結 / 解除連結圖文選單的使用者人數上限。
+    /// The maximum number of users in one bulk rich menu link or unlink.
+    /// </summary>
+    public const int RichMenuBulkUsers = 500;
 }

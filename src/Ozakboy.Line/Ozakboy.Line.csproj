@@ -6,12 +6,12 @@
     <RootNamespace>Ozakboy.Line</RootNamespace>
 
     <Title>Ozakboy.Line — LINE Login、Messaging API 與 Webhook 的 .NET 用戶端</Title>
-    <Description>LINE Login、Messaging API 與 Webhook 三件事的 .NET 用戶端,建構在 Ozakboy.Http 管線之上:預期失敗一律以 Result&lt;T&gt; 回傳而非擲出例外,憑證由管線遮罩後才寫進日誌,POST 只在帶了 X-Line-Retry-Key 時才重試。id_token 以 BCL 的 HMAC-SHA256 本地驗證(不引入任何 JWT 函式庫),webhook 簽章以定時比較驗證。除 Microsoft 官方套件與 Ozakboy.* 自研套件外,零第三方相依。A .NET client for LINE Login, the Messaging API, and webhooks, built on the Ozakboy.Http pipeline: expected failures come back as Result&lt;T&gt; rather than exceptions, credentials are masked before they reach a log, and a POST is retried only when it carries an X-Line-Retry-Key. ID tokens are verified locally with the BCL's HMAC-SHA256 (no JWT library is pulled in) and webhook signatures are compared in fixed time. No third-party dependency in the graph.</Description>
-    <PackageTags>ozakboy;line;line-login;line-messaging-api;line-bot;messaging-api;webhook;oauth2;oidc;pkce;id-token;rich-menu;flex-message;push-message;broadcast;result;taiwan;dotnet;csharp</PackageTags>
+    <Description>LINE Login、Messaging API 與 Webhook 三件事的 .NET 用戶端,建構在 Ozakboy.Http 管線之上:預期失敗一律以 Result&lt;T&gt; 回傳而非擲出例外,憑證由管線遮罩後才寫進日誌,POST 只在帶了 X-Line-Retry-Key 時才重試。id_token 以 BCL 的 HMAC-SHA256 本地驗證(不引入任何 JWT 函式庫),webhook 簽章以定時比較驗證。另附強型別的快速回覆與十種動作、可存可渲染的訊息範本,以及六種比對模式的關鍵字自動回覆(含歡迎訊息與備援回覆),圖文選單則有「建立→上傳→設預設→指向別名→刪舊」一次做完的替換流程。除 Microsoft 官方套件與 Ozakboy.* 自研套件外,零第三方相依。A .NET client for LINE Login, the Messaging API, and webhooks, built on the Ozakboy.Http pipeline: expected failures come back as Result&lt;T&gt; rather than exceptions, credentials are masked before they reach a log, and a POST is retried only when it carries an X-Line-Retry-Key. ID tokens are verified locally with the BCL's HMAC-SHA256 (no JWT library is pulled in) and webhook signatures are compared in fixed time. It also carries typed quick replies with all ten action kinds, message templates that can be stored and rendered, keyword auto reply across six match modes including the welcome message and the catch-all, and a rich menu replacement that runs create, upload, set-as-default, repoint-the-alias and delete-the-old in one call. No third-party dependency in the graph.</Description>
+    <PackageTags>ozakboy;line;line-login;line-messaging-api;line-bot;messaging-api;webhook;oauth2;oidc;pkce;id-token;rich-menu;rich-menu-alias;flex-message;quick-reply;push-message;broadcast;auto-reply;message-template;result;taiwan;dotnet;csharp</PackageTags>
 
     <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
-    <PackageReleaseNotes>0.1.0: first release. LINE Login (authorization URL with PKCE and bot_prompt, code exchange, refresh, revoke, token verification, profile, userinfo, friendship status, and a one-call CompleteLoginAsync), the Messaging API (push, multicast, broadcast, reply, quota, bot info, profile, message content, and the full rich menu surface), and webhook signature verification plus payload parsing. Every expected failure is a Result&lt;T&gt; carrying a stable line.* error code; LINE's own {message, details} error body is parsed into the error data as lineMessage and lineDetails while the HTTP category is preserved, so a 404 stays NotFound and a 429 stays RateLimited. ID tokens are verified locally against the channel secret with HMAC-SHA256 from the BCL. A POST is retried only when a retry key is supplied, since LINE deduplicates on X-Line-Retry-Key. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.1.0: first release. LINE Login (authorization URL with PKCE and bot_prompt, code exchange, refresh, revoke, token verification, profile, userinfo, friendship status, and a one-call CompleteLoginAsync), the Messaging API (push, multicast, broadcast, reply, quota, bot info, profile, message content, and the full rich menu surface including replacement, aliases and bulk links), typed quick replies with every action kind, message templates with {{variable}} rendering, keyword auto reply over six match modes, and webhook signature verification plus payload parsing. Every expected failure is a Result&lt;T&gt; carrying a stable line.* error code; LINE's own {message, details} error body is parsed into the error data as lineMessage and lineDetails while the HTTP category is preserved, so a 404 stays NotFound and a 429 stays RateLimited. ID tokens are verified locally against the channel secret with HMAC-SHA256 from the BCL. A POST is retried only when a retry key is supplied, since LINE deduplicates on X-Line-Retry-Key. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
@@ -31,9 +31,17 @@
     <NoWarn>$(NoWarn);CA1054;CA1055;CA1056;CA1716;CA1819;CA2000</NoWarn>
   </PropertyGroup>
 
-  <!-- 內部輔助型別(訊息序列化、LINE 錯誤加工)需要直接測試,它們不屬於公開契約。 -->
+  <!--
+    內部輔助型別(訊息序列化、LINE 錯誤加工、平面檔儲存體)需要直接測試,它們不屬於公開契約。
+    Ozakboy.Line.Mcp 也在名單上:它的待發佇列沿用同一個 JsonFileStore(原子寫入 + 讀寫鎖)。
+    與其把那份實作提升為公開 API(從此檔案格式與鎖策略都再也動不了),不如讓同一個 repo 裡的姊妹套件看得到。
+    Ozakboy.Line.Mcp is on the list too: its outbox reuses the same JsonFileStore — atomic writes and a
+    read-write lock. Rather than promoting that implementation to public API, where the file format and the
+    locking strategy could never change again, the sibling package in this repository is let in.
+  -->
   <ItemGroup>
     <InternalsVisibleTo Include="Ozakboy.Line.Tests" />
+    <InternalsVisibleTo Include="Ozakboy.Line.Mcp" />
   </ItemGroup>
 
   <ItemGroup>

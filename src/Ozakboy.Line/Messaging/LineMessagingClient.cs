@@ -69,7 +69,7 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return NotConfigured<IReadOnlyList<LineSentMessage>>();
         }
 
-        var count = ValidateMessageCount(messages.Count);
+        var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
             return count.ToFailure<IReadOnlyList<LineSentMessage>>();
@@ -150,7 +150,7 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
                     $"multicast 的收件者需為 1 到 {LineMessagingLimits.MulticastRecipients} 人,這次是 {to.Count} 人。A multicast takes between 1 and {LineMessagingLimits.MulticastRecipients} recipients; {to.Count} were supplied."));
         }
 
-        var count = ValidateMessageCount(messages.Count);
+        var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
             return count;
@@ -186,7 +186,7 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return Result.Failure(NotConfiguredError());
         }
 
-        var count = ValidateMessageCount(messages.Count);
+        var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
             return count;
@@ -250,7 +250,7 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return NotConfigured<IReadOnlyList<LineSentMessage>>();
         }
 
-        var count = ValidateMessageCount(messages.Count);
+        var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
             return count.ToFailure<IReadOnlyList<LineSentMessage>>();
@@ -555,6 +555,293 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             : ReadRichMenuIdAsync($"{LineEndpoints.UserRichMenuBase}{Uri.EscapeDataString(userId)}/richmenu", cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<Result<string>> ReplaceRichMenuAsync(
+        LineRichMenu menu,
+        byte[] image,
+        string contentType,
+        LineRichMenuReplaceOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(menu);
+        ArgumentNullException.ThrowIfNull(image);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+
+        if (!Options.IsConfigured)
+        {
+            return NotConfigured<string>();
+        }
+
+        var created = await CreateRichMenuAsync(menu, cancellationToken).ConfigureAwait(false);
+        if (created.IsFailure)
+        {
+            return created;
+        }
+
+        var richMenuId = created.GetValueOrThrow();
+
+        var uploaded = await UploadRichMenuImageAsync(richMenuId, image, contentType, cancellationToken).ConfigureAwait(false);
+        if (uploaded.IsFailure)
+        {
+            // 沒有圖片的選單掛上去是一片空白,比沒有選單更糟,而它又已經佔掉一個選單額度。
+            // 圖片傳不上去就把剛建的選單收回來,失敗這件事才是乾淨的 —— 沒有留下半成品。
+            // A menu without an image shows as a blank slab, which is worse than no menu at all, and it has
+            // already consumed one of the account's menu slots. Taking it back when the upload fails is what
+            // makes the failure clean: nothing half-built is left behind.
+            var removed = await DeleteRichMenuAsync(richMenuId, cancellationToken).ConfigureAwait(false);
+            if (removed.IsFailure && _logger is not null)
+            {
+                Log.OrphanRichMenuLeftBehind(_logger, richMenuId, removed.Error.Code);
+            }
+
+            return uploaded.ToFailure<string>();
+        }
+
+        if (options?.SetAsDefault == true)
+        {
+            var defaulted = await SetDefaultRichMenuAsync(richMenuId, cancellationToken).ConfigureAwait(false);
+            if (defaulted.IsFailure)
+            {
+                // 這一步失敗<b>不</b>刪新選單:選單本身已經完整(有圖、可連結),刪掉等於把做好的東西丟了。
+                // 呼叫端拿到失敗之後可以只重跑「設預設」這一步。
+                // This failure does <b>not</b> delete the new menu: the menu itself is complete — it has an image
+                // and can be linked — and deleting it would throw away finished work. A caller can retry just the
+                // set-default step.
+                return defaulted.ToFailure<string>();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(options?.AliasId))
+        {
+            var aliased = await PointAliasAsync(options.AliasId, richMenuId, cancellationToken).ConfigureAwait(false);
+            if (aliased.IsFailure)
+            {
+                return aliased.ToFailure<string>();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(options?.OldRichMenuId))
+        {
+            var deleted = await DeleteRichMenuAsync(options.OldRichMenuId, cancellationToken).ConfigureAwait(false);
+            if (deleted.IsFailure && _logger is not null)
+            {
+                Log.OldRichMenuNotDeleted(_logger, options.OldRichMenuId, deleted.Error.Code);
+            }
+        }
+
+        return Result.Success(richMenuId);
+    }
+
+    /// <inheritdoc />
+    public Task<Result> CreateRichMenuAliasAsync(string aliasId, string richMenuId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(aliasId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(richMenuId);
+
+        if (!Options.IsConfigured)
+        {
+            return Task.FromResult(Result.Failure(NotConfiguredError()));
+        }
+
+        var request = Post(LineEndpoints.RichMenuAlias, options: null, writer =>
+        {
+            writer.WriteString("richMenuAliasId", aliasId);
+            writer.WriteString("richMenuId", richMenuId);
+        });
+
+        return LineHttp.SendAsync(_http, request, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result> UpdateRichMenuAliasAsync(string aliasId, string richMenuId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(aliasId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(richMenuId);
+
+        if (!Options.IsConfigured)
+        {
+            return Task.FromResult(Result.Failure(NotConfiguredError()));
+        }
+
+        // 更新別名是 POST 到 /alias/{aliasId},不是 PUT。照 REST 的直覺寫 PUT 會得到 404。
+        // Updating an alias is a POST to /alias/{aliasId}, not a PUT. Following REST intuition yields a 404.
+        var uri = $"{LineEndpoints.RichMenuAlias}/{Uri.EscapeDataString(aliasId)}";
+        var request = Post(uri, options: null, writer => writer.WriteString("richMenuId", richMenuId));
+
+        return LineHttp.SendAsync(_http, request, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result> DeleteRichMenuAliasAsync(string aliasId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(aliasId);
+
+        var uri = $"{LineEndpoints.RichMenuAlias}/{Uri.EscapeDataString(aliasId)}";
+        return !Options.IsConfigured
+            ? Task.FromResult(Result.Failure(NotConfiguredError()))
+            : LineHttp.SendAsync(
+                _http,
+                Authorize(new HttpRequestMessage(HttpMethod.Delete, new Uri(uri, UriKind.Absolute))),
+                cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<Result<LineRichMenuAlias>> GetRichMenuAliasAsync(string aliasId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(aliasId);
+
+        var uri = $"{LineEndpoints.RichMenuAlias}/{Uri.EscapeDataString(aliasId)}";
+        return !Options.IsConfigured
+            ? Task.FromResult(NotConfigured<LineRichMenuAlias>())
+            : LineHttp.SendForJsonAsync<LineRichMenuAlias>(_http, Get(uri), cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<LineRichMenuAlias>>> GetRichMenuAliasListAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Options.IsConfigured)
+        {
+            return NotConfigured<IReadOnlyList<LineRichMenuAlias>>();
+        }
+
+        var list = await LineHttp
+            .SendForJsonAsync<LineRichMenuAliasListResponse>(_http, Get(LineEndpoints.RichMenuAliasList), cancellationToken)
+            .ConfigureAwait(false);
+
+        return list.IsFailure
+            ? list.ToFailure<IReadOnlyList<LineRichMenuAlias>>()
+            : Result.Success<IReadOnlyList<LineRichMenuAlias>>(list.GetValueOrThrow().Aliases ?? []);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> LinkRichMenuToUsersAsync(
+        IReadOnlyList<string> userIds,
+        string richMenuId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+        ArgumentException.ThrowIfNullOrWhiteSpace(richMenuId);
+
+        if (!Options.IsConfigured)
+        {
+            return Result.Failure(NotConfiguredError());
+        }
+
+        var recipients = ValidateBulkUsers(userIds.Count);
+        if (recipients.IsFailure)
+        {
+            return recipients;
+        }
+
+        var request = Post(LineEndpoints.RichMenuBulkLink, options: null, writer =>
+        {
+            writer.WriteString("richMenuId", richMenuId);
+            WriteUserIds(writer, userIds);
+        });
+
+        return await LineHttp.SendAsync(_http, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> UnlinkRichMenuFromUsersAsync(IReadOnlyList<string> userIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+
+        if (!Options.IsConfigured)
+        {
+            return Result.Failure(NotConfiguredError());
+        }
+
+        var recipients = ValidateBulkUsers(userIds.Count);
+        if (recipients.IsFailure)
+        {
+            return recipients;
+        }
+
+        var request = Post(LineEndpoints.RichMenuBulkUnlink, options: null, writer => WriteUserIds(writer, userIds));
+
+        return await LineHttp.SendAsync(_http, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public Task<Result> ValidateRichMenuAsync(LineRichMenu richMenu, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(richMenu);
+
+        if (!Options.IsConfigured)
+        {
+            return Task.FromResult(Result.Failure(NotConfiguredError()));
+        }
+
+        var request = Authorize(new HttpRequestMessage(HttpMethod.Post, new Uri(LineEndpoints.RichMenuValidate, UriKind.Absolute))
+        {
+            Content = JsonContent(JsonSerializer.SerializeToUtf8Bytes(richMenu, LineJson.Options)),
+        });
+
+        return LineHttp.SendAsync(_http, request, cancellationToken);
+    }
+
+    /// <summary>
+    /// 讓別名指向某個選單:別名不存在就建立,已存在就改指向。
+    /// Points an alias at a menu, creating it when absent and repointing it when it already exists.
+    /// </summary>
+    /// <param name="aliasId">別名識別碼。The alias identifier.</param>
+    /// <param name="richMenuId">選單識別碼。The menu identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    /// <remarks>
+    /// 先查再決定建立或更新,而不是「先建、失敗再更新」:後者會把「別名已存在」以外的失敗
+    /// (權杖過期、限流)也當成「那就改成更新吧」,於是真正的問題被第二次呼叫的錯誤蓋掉。
+    /// It reads first and then decides, rather than creating and falling back to an update on failure: the latter
+    /// treats every failure other than "the alias exists" — an expired token, a rate limit — as a reason to try an
+    /// update, and the real problem ends up hidden behind the second call's error.
+    /// </remarks>
+    private async Task<Result> PointAliasAsync(string aliasId, string richMenuId, CancellationToken cancellationToken)
+    {
+        var existing = await GetRichMenuAliasAsync(aliasId, cancellationToken).ConfigureAwait(false);
+
+        if (existing.IsSuccess)
+        {
+            return await UpdateRichMenuAliasAsync(aliasId, richMenuId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return existing.Error.Category == ErrorCategory.NotFound
+            ? await CreateRichMenuAliasAsync(aliasId, richMenuId, cancellationToken).ConfigureAwait(false)
+            : existing.ToResult();
+    }
+
+    /// <summary>
+    /// 檢查批次連結的人數。
+    /// Checks the number of users in a bulk call.
+    /// </summary>
+    /// <param name="count">人數。The count.</param>
+    /// <returns>在允許範圍內時為成功。Success when within the allowed range.</returns>
+    private static Result ValidateBulkUsers(int count) =>
+        count is > 0 and <= LineMessagingLimits.RichMenuBulkUsers
+            ? Result.Success()
+            : Error.Validation(
+                LineErrorCodes.TooManyRecipients,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"批次連結圖文選單需帶 1 到 {LineMessagingLimits.RichMenuBulkUsers} 位使用者,這次是 {count} 位。A bulk rich menu call takes between 1 and {LineMessagingLimits.RichMenuBulkUsers} users; {count} were supplied."));
+
+    /// <summary>
+    /// 寫出 <c>userIds</c> 陣列。
+    /// Writes the <c>userIds</c> array.
+    /// </summary>
+    /// <param name="writer">JSON 寫入器。The JSON writer.</param>
+    /// <param name="userIds">使用者識別碼。The user identifiers.</param>
+    private static void WriteUserIds(Utf8JsonWriter writer, IReadOnlyList<string> userIds)
+    {
+        writer.WriteStartArray("userIds");
+        for (var index = 0; index < userIds.Count; index++)
+        {
+            writer.WriteStringValue(userIds[index]);
+        }
+
+        writer.WriteEndArray();
+    }
+
     /// <summary>
     /// 讀一個「可能不存在」的圖文選單連結。
     /// Reads a rich menu link that may not exist.
@@ -611,6 +898,42 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         return sent.IsFailure
             ? sent.ToFailure<IReadOnlyList<LineSentMessage>>()
             : Result.Success<IReadOnlyList<LineSentMessage>>(sent.GetValueOrThrow().SentMessages ?? []);
+    }
+
+    /// <summary>
+    /// 送出前檢查整批訊息:則數,以及每一則的快速回覆按鈕數。
+    /// Checks the whole batch before sending: the message count, and each message's quick reply buttons.
+    /// </summary>
+    /// <param name="messages">訊息。The messages.</param>
+    /// <returns>全部通過時為成功。Success when everything passes.</returns>
+    /// <remarks>
+    /// 快速回覆超量在 LINE 那頭是整則訊息被退回,而回來的 400 只說「請求內容有 1 個錯誤」,
+    /// 不會說是第幾則訊息的第幾顆按鈕。在本地檢查,錯誤訊息才說得出實際的數量。
+    /// An oversized quick reply has LINE reject the whole message, and the 400 that comes back says only that the
+    /// body has one error — not which message, and not which button. Checked locally, the message can say how
+    /// many there actually were.
+    /// </remarks>
+    private static Result ValidateMessages(IReadOnlyList<LineMessage> messages)
+    {
+        var count = ValidateMessageCount(messages.Count);
+        if (count.IsFailure)
+        {
+            return count;
+        }
+
+        for (var index = 0; index < messages.Count; index++)
+        {
+            if (messages[index].QuickReply is { } quickReply)
+            {
+                var quickReplyResult = quickReply.Validate();
+                if (quickReplyResult.IsFailure)
+                {
+                    return quickReplyResult;
+                }
+            }
+        }
+
+        return Result.Success();
     }
 
     /// <summary>
@@ -806,5 +1129,31 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             Level = LogLevel.Debug,
             Message = "查詢圖文選單連結得到 404,視為「沒有連結」。A rich menu lookup answered 404 and is read as \"nothing linked\".")]
         internal static partial void NoRichMenuLinked(ILogger logger);
+
+        /// <summary>
+        /// 圖片上傳失敗後,連帶要收回的新選單也刪不掉時的記錄。
+        /// Logged when the image upload failed and the new menu could not be taken back either.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="richMenuId">刪不掉的選單識別碼。The menu that could not be deleted.</param>
+        /// <param name="errorCode">刪除失敗的代碼。The deletion's failure code.</param>
+        [LoggerMessage(
+            EventId = 2101,
+            Level = LogLevel.Warning,
+            Message = "圖片上傳失敗後,新建的圖文選單 {RichMenuId} 也刪除失敗({ErrorCode}),帳號上留下一個沒有圖片的選單,請手動清除。After the image upload failed, the newly created rich menu {RichMenuId} could not be deleted either ({ErrorCode}); an imageless menu is left on the account and needs clearing by hand.")]
+        internal static partial void OrphanRichMenuLeftBehind(ILogger logger, string richMenuId, string errorCode);
+
+        /// <summary>
+        /// 舊選單刪不掉時的記錄。
+        /// Logged when the old menu could not be deleted.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="richMenuId">舊選單識別碼。The old menu's identifier.</param>
+        /// <param name="errorCode">刪除失敗的代碼。The deletion's failure code.</param>
+        [LoggerMessage(
+            EventId = 2102,
+            Level = LogLevel.Warning,
+            Message = "舊的圖文選單 {RichMenuId} 刪除失敗({ErrorCode});新選單已生效,替換本身視為成功。Deleting the old rich menu {RichMenuId} failed ({ErrorCode}); the new menu is live and the replacement itself counts as a success.")]
+        internal static partial void OldRichMenuNotDeleted(ILogger logger, string richMenuId, string errorCode);
     }
 }

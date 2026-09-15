@@ -160,6 +160,49 @@ public static class LineEndpoints
     public const string RichMenuContentBase = "https://api-data.line.me/v2/bot/richmenu/";
 
     /// <summary>
+    /// 圖文選單別名的建立、更新、查詢與刪除端點。
+    /// The endpoint that creates, updates, reads, and deletes rich menu aliases.
+    /// </summary>
+    /// <remarks>
+    /// 別名是「以新換舊」的關鍵:每次替換的選單都是新的識別碼,但別名可以一直指向最新那一個。
+    /// 選單之間互相切換的動作(<c>richmenuswitch</c>)因此寫別名而不寫識別碼 ——
+    /// 否則換一次選單就得把所有動作裡的識別碼全部改一遍。
+    /// Aliases are what makes swapping a menu practical: every replacement is a new menu id, but an alias can
+    /// keep pointing at the newest one. The switch action (<c>richmenuswitch</c>) therefore names an alias rather
+    /// than an id — otherwise one replacement means rewriting the id inside every action.
+    /// </remarks>
+    public const string RichMenuAlias = "https://api.line.me/v2/bot/richmenu/alias";
+
+    /// <summary>
+    /// 列出所有圖文選單別名。
+    /// Lists every rich menu alias.
+    /// </summary>
+    public const string RichMenuAliasList = "https://api.line.me/v2/bot/richmenu/alias/list";
+
+    /// <summary>
+    /// 批次把圖文選單連結到多位使用者(單次上限 <see cref="LineMessagingLimits.RichMenuBulkUsers"/> 人)。
+    /// Links a rich menu to several users at once, up to
+    /// <see cref="LineMessagingLimits.RichMenuBulkUsers"/> per call.
+    /// </summary>
+    public const string RichMenuBulkLink = "https://api.line.me/v2/bot/richmenu/bulk/link";
+
+    /// <summary>
+    /// 批次解除多位使用者的圖文選單連結。
+    /// Unlinks several users' rich menus at once.
+    /// </summary>
+    public const string RichMenuBulkUnlink = "https://api.line.me/v2/bot/richmenu/bulk/unlink";
+
+    /// <summary>
+    /// 驗證圖文選單定義,但不建立。
+    /// Validates a rich menu definition without creating it.
+    /// </summary>
+    /// <remarks>
+    /// 區塊超出邊界、尺寸不合規這類問題在這裡就看得到,不必先建一個選單再把它刪掉。
+    /// Out-of-bounds areas and non-conforming sizes show up here, without creating a menu only to delete it.
+    /// </remarks>
+    public const string RichMenuValidate = "https://api.line.me/v2/bot/richmenu/validate";
+
+    /// <summary>
     /// 預設圖文選單的設定、清除與查詢端點。
     /// The endpoint that sets, clears, and reads the default rich menu.
     /// </summary>

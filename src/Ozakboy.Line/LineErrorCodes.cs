@@ -49,6 +49,58 @@ public static class LineErrorCodes
     public const string InvalidJson = "line.validation.invalid_json";
 
     /// <summary>
+    /// 快速回覆的按鈕數不在允許範圍內(見 <see cref="LineMessagingLimits.MaxQuickReplyItems"/>)。
+    /// The number of quick reply buttons is outside the allowed range; see
+    /// <see cref="LineMessagingLimits.MaxQuickReplyItems"/>.
+    /// </summary>
+    public const string TooManyQuickReplyItems = "line.validation.too_many_quick_reply_items";
+
+    /// <summary>
+    /// 範本裡有佔位符沒有對應的值。
+    /// The template has placeholders with no value supplied.
+    /// </summary>
+    /// <remarks>
+    /// 錯誤訊息會列出缺了哪幾個變數 —— 少給一個變數的結果是把 <c>{{name}}</c> 原樣送到使用者眼前,
+    /// 那種錯誤看得到卻查不出是哪一層漏掉的。
+    /// The message names the variables that were missing. Leaving one out means sending <c>{{name}}</c> verbatim
+    /// to a user: visible on screen, with nothing to say which layer dropped it.
+    /// </remarks>
+    public const string MissingTemplateVariables = "line.validation.missing_template_variables";
+
+    /// <summary>
+    /// 自動回覆規則本身不成立:樣式空白、正規表示式編不過,或回覆內容不是 1 到 5 則訊息。
+    /// The auto reply rule does not hold together: a blank pattern, a regular expression that will not compile,
+    /// or a reply body that is not between one and five messages.
+    /// </summary>
+    /// <remarks>
+    /// 只用一個代碼而不是三個:呼叫端對這三種情形的處置相同(把規則退回給編輯的人),
+    /// 差別只在顯示哪一句話,而那句話在錯誤訊息裡。
+    /// One code rather than three: a caller does the same thing in all three cases — hand the rule back to
+    /// whoever is editing it — and the only difference is which sentence to show, which the message carries.
+    /// </remarks>
+    public const string InvalidAutoReplyRule = "line.validation.invalid_auto_reply_rule";
+
+    /// <summary>
+    /// 待發項目不存在。
+    /// The outbox item does not exist.
+    /// </summary>
+    public const string McpOutboxNotFound = "line.mcp.outbox_not_found";
+
+    /// <summary>
+    /// 待發項目目前的狀態不允許這個操作(例如已送出的項目不能再取消)。
+    /// The outbox item's current status does not allow this operation — an item already sent cannot be cancelled,
+    /// for one.
+    /// </summary>
+    public const string McpOutboxInvalidStatus = "line.mcp.outbox_invalid_status";
+
+    /// <summary>
+    /// 圖文選單圖片抓取失敗:位址連不上、型別不是 JPEG / PNG,或超過大小上限。
+    /// Fetching the rich menu image failed: the address could not be reached, the type was neither JPEG nor PNG,
+    /// or it exceeded the size cap.
+    /// </summary>
+    public const string McpImageFetchFailed = "line.mcp.image_fetch_failed";
+
+    /// <summary>
     /// LINE 回了非 2xx 的狀態碼。
     /// LINE answered with a non-2xx status code.
     /// </summary>

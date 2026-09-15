@@ -29,6 +29,19 @@ internal sealed class FakeBackchannelHandler : HttpMessageHandler
     internal List<string> Requests { get; } = [];
 
     /// <summary>
+    /// 送出過的請求內容,與 <see cref="Requests"/> 一一對應;沒有內容時為 <see langword="null"/>。
+    /// The bodies that were sent, one per entry in <see cref="Requests"/>, or <see langword="null"/> where there
+    /// was none.
+    /// </summary>
+    /// <remarks>
+    /// 權杖端點的 <c>redirect_uri</c> 只在請求內容裡看得到,位址上沒有 —— 而那個值正是
+    /// <c>PublicOrigin</c> 要影響的東西。
+    /// The token endpoint's <c>redirect_uri</c> is visible only in the body and never in the address, and that
+    /// value is exactly what <c>PublicOrigin</c> exists to change.
+    /// </remarks>
+    internal List<string?> Bodies { get; } = [];
+
+    /// <summary>
     /// 權杖端點要回的 id_token;不回時為 <see langword="null"/>。
     /// The id_token the token endpoint answers with, or <see langword="null"/> for none.
     /// </summary>
@@ -92,10 +105,14 @@ internal sealed class FakeBackchannelHandler : HttpMessageHandler
     }
 
     /// <inheritdoc />
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Requests.Add(request.RequestUri!.ToString());
-        return Task.FromResult(_responder(request));
+        Bodies.Add(request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+
+        return _responder(request);
     }
 
     /// <summary>

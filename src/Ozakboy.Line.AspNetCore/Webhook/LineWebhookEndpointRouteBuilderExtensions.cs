@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.AutoReply;
 using Ozakboy.Line.Messaging;
 using Ozakboy.Line.Webhook;
 
@@ -59,10 +61,69 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     public static IEndpointConventionBuilder MapLineWebhook(
         this IEndpointRouteBuilder endpoints,
         string pattern,
+        Func<LineWebhookEvent, HttpContext, CancellationToken, Task> handler) =>
+        endpoints.MapLineWebhook(pattern, configure: null, handler);
+
+    /// <summary>
+    /// 掛上 webhook 端點,逐一事件呼叫處理常式,並可先跑一次關鍵字自動回覆。
+    /// Maps a webhook endpoint that invokes the handler once per event, optionally running keyword auto reply
+    /// first.
+    /// </summary>
+    /// <param name="endpoints">端點路由建構器。The endpoint route builder.</param>
+    /// <param name="pattern">路由樣式。The route pattern.</param>
+    /// <param name="configure">端點設定;為 <see langword="null"/> 時採用預設。The endpoint settings, or <see langword="null"/> for the defaults.</param>
+    /// <param name="handler">每個事件的處理常式。The handler, called for each event.</param>
+    /// <returns>端點慣例建構器。The endpoint convention builder.</returns>
+    /// <remarks>
+    /// <para>
+    /// <see cref="LineWebhookEndpointOptions.AutoReply"/> 為 <see langword="true"/> 時,每個事件會<b>先</b>交給
+    /// <see cref="ILineAutoReplyService"/>,結果放進
+    /// <c>HttpContext.Items[LineWebhookItems.AutoReplyOutcome]</c>,然後<b>照常</b>呼叫處理常式。
+    /// 自動回覆不取代處理常式,只是搶在它前面把「規則回得了的」回掉。
+    /// With <see cref="LineWebhookEndpointOptions.AutoReply"/> set, each event goes to
+    /// <see cref="ILineAutoReplyService"/> <b>first</b>, the outcome lands in
+    /// <c>HttpContext.Items[LineWebhookItems.AutoReplyOutcome]</c>, and the handler is then called <b>as
+    /// usual</b>. Auto reply does not replace the handler; it gets in front of it and answers what the rules can
+    /// answer.
+    /// </para>
+    /// <para>
+    /// 自動回覆的失敗(規則渲染不出來、LINE 拒絕回覆)只記錄,不中斷同一批的其他事件,也不影響狀態碼 ——
+    /// 理由與處理常式擲例外時相同:回非 2xx 會讓 LINE 重送整批。
+    /// A failing auto reply — a rule that will not render, a reply LINE refused — is logged and stops neither the
+    /// rest of the batch nor the response, for the same reason as a throwing handler: a non-2xx answer makes LINE
+    /// redeliver the whole batch.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="endpoints"/> 或 <paramref name="handler"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="endpoints"/> or <paramref name="handler"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// 開啟了自動回覆卻沒有註冊 <see cref="ILineAutoReplyService"/> 時,在<b>掛端點當下</b>擲出。
+    /// Thrown <b>while mapping</b> when auto reply is on but no <see cref="ILineAutoReplyService"/> is registered.
+    /// </exception>
+    public static IEndpointConventionBuilder MapLineWebhook(
+        this IEndpointRouteBuilder endpoints,
+        string pattern,
+        Action<LineWebhookEndpointOptions>? configure,
         Func<LineWebhookEvent, HttpContext, CancellationToken, Task> handler)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(handler);
+
+        var options = new LineWebhookEndpointOptions();
+        configure?.Invoke(options);
+
+        if (options.AutoReply && endpoints.ServiceProvider.GetService<ILineAutoReplyService>() is null)
+        {
+            // 在掛端點當下就失敗,而不是等第一個使用者傳訊息、發現沒有回應才開始查。
+            // 漏掉註冊在執行期沒有任何徵兆:端點回 200、log 一片乾淨,只是機器人不說話。
+            // Fail while mapping rather than when the first user's message goes unanswered. A missing
+            // registration leaves no trace at runtime: the endpoint answers 200, the log is clean, and the bot
+            // simply never speaks.
+            throw new InvalidOperationException(
+                "開啟了 webhook 端點的自動回覆,但容器裡沒有 ILineAutoReplyService,請先呼叫 services.AddLineAutoReply(...)。Auto reply is enabled on the webhook endpoint but no ILineAutoReplyService is registered; call services.AddLineAutoReply(...) first.");
+        }
 
         return endpoints.MapLineWebhook(pattern, async (payload, context, cancellationToken) =>
         {
@@ -71,6 +132,11 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             for (var index = 0; index < payload.Events.Count; index++)
             {
                 var webhookEvent = payload.Events[index];
+
+                if (options.AutoReply)
+                {
+                    await RunAutoReplyAsync(context, logger, webhookEvent, cancellationToken).ConfigureAwait(false);
+                }
 
                 try
                 {
@@ -149,6 +215,44 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     }
 
     /// <summary>
+    /// 對一個事件跑自動回覆,並把結果放進 <c>HttpContext.Items</c>。
+    /// Runs auto reply for one event and puts the outcome into <c>HttpContext.Items</c>.
+    /// </summary>
+    /// <param name="context">請求內容。The HTTP context.</param>
+    /// <param name="logger">記錄器。The logger.</param>
+    /// <param name="webhookEvent">事件。The event.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    private static async Task RunAutoReplyAsync(
+        HttpContext context,
+        ILogger logger,
+        LineWebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        var service = context.RequestServices.GetRequiredService<ILineAutoReplyService>();
+
+        Result<LineAutoReplyOutcome> outcome;
+        try
+        {
+            outcome = await service.HandleAsync(webhookEvent, cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable CA1031 // 理由同處理常式:一個事件的失敗不得讓整批回非 2xx 而被 LINE 重送。
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            Log.AutoReplyThrew(logger, webhookEvent.WebhookEventId, exception);
+            return;
+        }
+
+        if (outcome.IsFailure)
+        {
+            Log.AutoReplyFailed(logger, webhookEvent.WebhookEventId, outcome.Error.Code);
+            return;
+        }
+
+        context.Items[LineWebhookItems.AutoReplyOutcome] = outcome.GetValueOrThrow();
+    }
+
+    /// <summary>
     /// 取得這個端點用的記錄器。
     /// Gets the logger for this endpoint.
     /// </summary>
@@ -189,5 +293,31 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             Level = LogLevel.Warning,
             Message = "LINE webhook 請求被拒絕({ErrorCode})。A LINE webhook request was rejected ({ErrorCode}).")]
         internal static partial void WebhookRejected(ILogger logger, string errorCode);
+
+        /// <summary>
+        /// 自動回覆回報失敗時的記錄。
+        /// Logged when the auto reply reported a failure.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">事件識別碼。The event identifier.</param>
+        /// <param name="errorCode">失敗代碼。The failure code.</param>
+        [LoggerMessage(
+            EventId = 2202,
+            Level = LogLevel.Warning,
+            Message = "事件 {WebhookEventId} 的自動回覆失敗({ErrorCode});處理常式照常執行。Auto reply failed for event {WebhookEventId} ({ErrorCode}); the handler still runs.")]
+        internal static partial void AutoReplyFailed(ILogger logger, string webhookEventId, string errorCode);
+
+        /// <summary>
+        /// 自動回覆擲出例外時的記錄。
+        /// Logged when the auto reply threw.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">事件識別碼。The event identifier.</param>
+        /// <param name="exception">例外。The exception.</param>
+        [LoggerMessage(
+            EventId = 2203,
+            Level = LogLevel.Error,
+            Message = "事件 {WebhookEventId} 的自動回覆擲出例外;處理常式照常執行。Auto reply threw for event {WebhookEventId}; the handler still runs.")]
+        internal static partial void AutoReplyThrew(ILogger logger, string webhookEventId, Exception exception);
     }
 }
