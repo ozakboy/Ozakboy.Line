@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Ozakboy.Line</PackageId>
+    <AssemblyName>Ozakboy.Line</AssemblyName>
+    <RootNamespace>Ozakboy.Line</RootNamespace>
+
+    <Title>Ozakboy.Line — LINE Login、Messaging API 與 Webhook 的 .NET 用戶端</Title>
+    <Description>LINE Login、Messaging API 與 Webhook 三件事的 .NET 用戶端,建構在 Ozakboy.Http 管線之上:預期失敗一律以 Result&lt;T&gt; 回傳而非擲出例外,憑證由管線遮罩後才寫進日誌,POST 只在帶了 X-Line-Retry-Key 時才重試。id_token 以 BCL 的 HMAC-SHA256 本地驗證(不引入任何 JWT 函式庫),webhook 簽章以定時比較驗證。除 Microsoft 官方套件與 Ozakboy.* 自研套件外,零第三方相依。A .NET client for LINE Login, the Messaging API, and webhooks, built on the Ozakboy.Http pipeline: expected failures come back as Result&lt;T&gt; rather than exceptions, credentials are masked before they reach a log, and a POST is retried only when it carries an X-Line-Retry-Key. ID tokens are verified locally with the BCL's HMAC-SHA256 (no JWT library is pulled in) and webhook signatures are compared in fixed time. No third-party dependency in the graph.</Description>
+    <PackageTags>ozakboy;line;line-login;line-messaging-api;line-bot;messaging-api;webhook;oauth2;oidc;pkce;id-token;rich-menu;flex-message;push-message;broadcast;result;taiwan;dotnet;csharp</PackageTags>
+
+    <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
+    <PackageReleaseNotes>0.1.0: first release. LINE Login (authorization URL with PKCE and bot_prompt, code exchange, refresh, revoke, token verification, profile, userinfo, friendship status, and a one-call CompleteLoginAsync), the Messaging API (push, multicast, broadcast, reply, quota, bot info, profile, message content, and the full rich menu surface), and webhook signature verification plus payload parsing. Every expected failure is a Result&lt;T&gt; carrying a stable line.* error code; LINE's own {message, details} error body is parsed into the error data as lineMessage and lineDetails while the HTTP category is preserved, so a 404 stays NotFound and a 429 stays RateLimited. ID tokens are verified locally against the channel secret with HMAC-SHA256 from the BCL. A POST is retried only when a retry key is supplied, since LINE deduplicates on X-Line-Retry-Key. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!--
+      CA1054 / CA1055 / CA1056:分析器建議凡是名為 *Uri / *Url 的參數、回傳值與屬性都改用 System.Uri。
+                                這裡刻意維持 string。LINE 的 JSON 把這些欄位當字串傳,而 System.Uri 會做正規化
+                                (百分比編碼、大小寫、結尾斜線):把 LINE 給的位址繞一趟 Uri 再吐出來,送回去的
+                                就不是原本那一個字串了。redirect_uri 尤其要命 —— 它必須與 LINE Developers 後台
+                                登記的值逐字相同,被正規化過就直接授權失敗,而錯誤訊息不會說是哪裡不一樣。
+      CA1716:分析器指出參數名 to 與 Visual Basic 的 To 關鍵字同名。to 是 LINE API 自己的欄位名(請求內容的
+              "to"),改成 recipient 只會讓程式碼與 LINE 文件對不起來;本套件也不以 Visual Basic 消費端為目標。
+      CA1819:分析器建議屬性不要回傳陣列。LineContent.Bytes 就是一份下載回來的內容,包成 ReadOnlyMemory 只是
+              讓每個呼叫端在寫檔前多一次轉換;這個型別是唯讀的傳輸載體,不是會被改來改去的狀態。
+      CA2000:分析器看不出 HttpRequestMessage 的擁有權轉移。本套件建好的請求一律交給 LineHttp 的送出方法,
+              由它以 using 釋放(見 LineHttp.SendForStringAsync);在呼叫端再包一層 using 反而會在送出前就釋放。
+    -->
+    <NoWarn>$(NoWarn);CA1054;CA1055;CA1056;CA1716;CA1819;CA2000</NoWarn>
+  </PropertyGroup>
+
+  <!-- 內部輔助型別(訊息序列化、LINE 錯誤加工)需要直接測試,它們不屬於公開契約。 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ozakboy.Line.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\logo.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!--
+    相依政策:只允許 .NET BCL、Microsoft 官方套件與 Ozakboy.* 自研套件,判定看「遞移相依」而非套件名稱。
+    id_token 的驗證刻意不引入任何 JWT 函式庫 —— LINE 的 id_token 是 HS256,以 channel secret 為金鑰,
+    BCL 的 HMACSHA256 與 Base64Url 就足夠,多一個函式庫只是多一條遞移相依。
+    Dependency policy: only the .NET BCL, first-party Microsoft packages, and Ozakboy.* packages are allowed,
+    judged by the transitive graph rather than by package name. ID token validation deliberately pulls in no JWT
+    library: LINE signs id_tokens with HS256 keyed by the channel secret, which the BCL's HMACSHA256 and Base64Url
+    already cover, and another library would only add another transitive edge.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageReference Include="Ozakboy.Core.Abstractions" Version="0.3.0" />
+    <PackageReference Include="Ozakboy.Http" Version="0.3.3" />
+  </ItemGroup>
+
+  <!--
+    刻意不引用 Microsoft.SourceLink.GitHub 套件,與其他 Ozakboy.* 套件一致。
+    自 .NET 8 起 SourceLink 已內建於 SDK,設定 PublishRepositoryUrl 與 EmbedUntrackedSources
+    (見 Directory.Build.props)即可;外掛套件反而會帶進有安全通報的相依,
+    在 TreatWarningsAsErrors 之下讓「還原」階段就直接失敗。
+  -->
+
+</Project>

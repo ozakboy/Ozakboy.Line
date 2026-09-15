@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+
+    <!-- 執行器選擇與理由同核心測試專案,見該 csproj 的說明。 -->
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!--
+    Microsoft.AspNetCore.TestHost 是 Microsoft 官方套件,在記憶體內跑完整的 ASP.NET Core 管線,
+    認證方案的挑戰與回呼要驗到「實際送出的 302 位址」與「cookie 往返」,只有真的起一個伺服器才驗得到。
+    Microsoft.AspNetCore.TestHost is a first-party package that runs the full ASP.NET Core pipeline in memory.
+    Verifying an authentication scheme's challenge and callback means checking the actual 302 location and the
+    cookie round trip, which needs a real server.
+  -->
+  <ItemGroup>
+    <PackageReference Include="MSTest.TestAdapter" Version="4.0.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.0.2" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.1.0" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ozakboy.Line.AspNetCore\Ozakboy.Line.AspNetCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <Using Include="Ozakboy.Core.Abstractions" />
+    <Using Include="Ozakboy.Line" />
+    <Using Include="Ozakboy.Line.AspNetCore" />
+    <Using Include="Ozakboy.Line.Webhook" />
+  </ItemGroup>
+
+</Project>
