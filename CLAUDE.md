@@ -133,7 +133,6 @@ Ozakboy.Line/
 - **受眾加成員是 PUT 到同一個 `/audienceGroup/upload` 端點**,不是 POST 到 `/{id}/members`;成員是 `{"id": …}` 物件陣列而不是裸字串(與 multicast 的 `to` 不同);`audienceGroupId` 是**數字**。`markAsRead` 的內容是巢狀的 `chat.userId`,不是平的 `userId`。
 - **imagemap 動作的位址欄位是 `linkUri`**,不是快速回覆動作的 `uri`;範本外層 `type` 固定 `template`,真正的型別在 `template.type`。這兩組動作型別因此各自建模(`LineImagemapAction` 不是 `LineAction`),不重用。
 - **洞察端點的日期一律以 `CultureInfo.InvariantCulture` 寫成 `yyyyMMdd`**,預設文化在某些機器會寫成民國年或加分隔符號。
-- **`git checkout -- .` 會把「已修改但未暫存」的追蹤檔案一併還原**,在分批 commit 時只能用來還原「明確點名的檔案」;要拆 commit 請暫存副本再改,不要靠 checkout 回復。
 - **`AddOzakboyHttpPipeline` 的設定委派在註冊當下就執行完畢**,拿不到 `IOptions`。要把 channel secret 登記進遮罩器,只能在 `AddLineLogin` / `AddLineMessaging` 裡先自己跑一次 `configure` 取值(見 `LineServiceCollectionExtensions` 的 `probe`)。祕密長度不足 `SecretMasker.MinimumKnownSecretLength`(8)時不登記,否則 `HttpPipelineOptions.Validate()` 會讓註冊直接擲例外。
 - **認證處理器的 nonce 必須在呼叫 `base.BuildChallengeUrl` 之前放進 `properties.Items`**,因為基底類別在那個方法裡就把 properties 序列化成 state 了;之後再放的東西不會出門。
 - **遠端認證失敗的預設行為是把例外往外丟**,測試(與正式站)要設 `Events.OnRemoteFailure` 才看得到狀態碼。
