@@ -19,9 +19,13 @@
       CA1054 / CA1055 / CA1056:理由同核心套件 —— 位址一律維持 string,不繞一趟 System.Uri 被正規化。
                                 MCP 工具的參數更是如此:那些值由外部 AI 提供,原樣傳遞才對得起 LINE 的逐字比對。
       CA1812:中介層類別(金鑰閘、/.well-known)由 UseMiddleware&lt;T&gt; 以反射具現化,分析器看不出來。
-      CA1848:分析器建議所有記錄都改用 LoggerMessage 委派。本套件已在需要的地方這麼做;
-              剩下的是啟動期與待審流程的低頻記錄,一次請求最多一兩筆,為它們各寫一個委派只是噪音。
-      CA2007:理由同核心套件 —— 本套件不在 UI 同步內容下執行。
+
+      以下兩條刻意「不」列進 NoWarn,靠程式碼本身通過分析器;日後動到相關程式碼時請維持同一套做法,
+      不要改成關規則:
+      CA1848:本套件目前沒有任何記錄(沒有 ILogger),規則自然不會觸發。若日後要加記錄,
+              比照核心套件用 [LoggerMessage] 來源產生器(見 LineMessagingClient / LineAutoReplyService)。
+      CA2007:本套件每一個 await 都接了 .ConfigureAwait(false)(與核心套件一致,函式庫不在 UI 同步內容下執行),
+              規則是被滿足而不是被壓下來。
     -->
     <NoWarn>$(NoWarn);CA1054;CA1055;CA1056;CA1812</NoWarn>
   </PropertyGroup>

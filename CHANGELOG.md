@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation only; no code or behaviour change.** `CLAUDE.md`'s directory map now matches the tree: the
+  `Actions/` folder holds nine concrete actions plus `RawAction` (it said four), and `LineQuickReply`,
+  `LineRichMenuAlias`, `LineRichMenuReplaceOptions`, `LineWebhookContentProvider` and `ILineMcpOutboxService` are
+  listed where they live. The `Ozakboy.Line.Mcp` csproj comment on CA1848 and CA2007 was rewritten to say what is
+  actually true: neither rule is in `NoWarn` — the package has no logging at all, so CA1848 never fires, and
+  every `await` carries `.ConfigureAwait(false)`, so CA2007 is satisfied rather than suppressed. No rule was
+  relaxed.
+  **只改文件,程式碼與行為不變。** `CLAUDE.md` 的目錄結構改成與實際檔案一致:`Actions/` 是九種具體動作加
+  `RawAction`(原本寫四種),並補列 `LineQuickReply`、`LineRichMenuAlias`、`LineRichMenuReplaceOptions`、
+  `LineWebhookContentProvider` 與 `ILineMcpOutboxService`。`Ozakboy.Line.Mcp` csproj 裡關於 CA1848 與
+  CA2007 的註解改寫成實況:兩條都不在 `NoWarn` —— 本套件完全沒有記錄,CA1848 根本不會觸發;
+  每個 `await` 都接了 `.ConfigureAwait(false)`,CA2007 是被滿足而不是被壓下來。沒有放寬任何規則。
+
 ## [0.1.0] - 2026-09-15
 
 First release. LINE Login, the Messaging API, and webhooks for .NET, with an ASP.NET Core authentication scheme

@@ -40,11 +40,12 @@ Ozakboy.Line/
     Line{Endpoints,ErrorCodes,ErrorDataKeys,MessagingLimits,Json,Http,ApiErrorMapper}.cs
     LineUserProfile.cs  LineHttpClientNames.cs  LineServiceCollectionExtensions.cs
     Login/        LineLoginOptions / LineLoginClient / LineIdTokenValidator / LinePkce / 回應模型
-    Messaging/    LineMessagingOptions / LineMessagingClient / 回應模型 / LinePushOptions
+    Messaging/    LineMessagingOptions / LineMessagingClient / 回應模型 / LinePushOptions / LineQuickReply(+Item)
       Messages/   LineMessage 與七種具體訊息 + RawMessage + 序列化器與轉換器
-      Actions/    LineAction 與四種具體動作 + 轉換器
-      RichMenu/   LineRichMenu / Size / Bounds / Area / Info
-    Webhook/      LineWebhookSignature / LineWebhookParser / 事件模型 / 型別常數
+      Actions/    LineAction 與九種具體動作(Uri / Message / Postback / DatetimePicker / Camera / CameraRoll /
+                Location / Clipboard / RichMenuSwitch)+ RawAction + 轉換器
+      RichMenu/   LineRichMenu / Size / Bounds / Area / Info / Alias / ReplaceOptions
+    Webhook/      LineWebhookSignature / LineWebhookParser / LineWebhookContentProvider / 事件模型 / 型別常數
     Templates/    LineMessageTemplate / LineTemplateVariables / LineTemplateRenderer / store 與 DI
     AutoReply/    LineAutoReplyRule / Matcher / Service / Outcome / store 與 DI
     Storage/      JsonFileStore(internal,原子寫入 + 讀寫鎖)/ LineStoreIds
@@ -56,7 +57,7 @@ Ozakboy.Line/
     LineMcp{Options,SendMode,Json,Messages,RichMenu,DailyLimit,StoreOptions,HttpClientNames}.cs
     LineMcp{ServiceCollection,ServerBuilder,ApplicationBuilder,EndpointRouteBuilder}Extensions.cs
     LineMcp{KeyGate,WellKnownNotFound}Middleware.cs
-    Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / Service
+    Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / ILineMcpOutboxService / Service
     Tools/        Line{Info,Send,Outbox,RichMenu,AutoReply,Template}Tools
   tests/Ozakboy.Line.Tests/             核心測試(離線)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
