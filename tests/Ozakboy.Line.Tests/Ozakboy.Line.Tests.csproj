@@ -42,6 +42,16 @@
     <ProjectReference Include="..\..\src\Ozakboy.Line\Ozakboy.Line.csproj" />
   </ItemGroup>
 
+  <!--
+    Samples/ 是依 LINE 官方文件整理的回應樣本(每個檔案的 source 欄位註明端點、retrieved 欄位註明擷取日期),
+    反序列化測試以它們為準;複製到輸出目錄,測試以 Samples.Body(名稱) 讀取 body 欄位。
+    Samples/ holds response samples transcribed from LINE's official reference (each file's source field names
+    the endpoint and its retrieved field the date). The deserialisation tests read them through Samples.Body(name).
+  -->
+  <ItemGroup>
+    <None Update="Samples\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
     <Using Include="Ozakboy.Core.Abstractions" />

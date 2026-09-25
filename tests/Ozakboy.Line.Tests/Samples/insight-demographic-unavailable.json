@@ -1,0 +1,12 @@
+{
+  "source": "Get friend demographics (fewer than 20 friends) — GET /v2/bot/insight/demographic",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-09-25;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "available": false,
+    "genders": [],
+    "ages": [],
+    "areas": [],
+    "appTypes": [],
+    "subscriptionPeriods": []
+  }
+}

@@ -1,6 +1,9 @@
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging;
+using Ozakboy.Line.Messaging.Audience;
+using Ozakboy.Line.Messaging.Insight;
 using Ozakboy.Line.Messaging.Messages;
+using Ozakboy.Line.Messaging.Narrowcast;
 using Ozakboy.Line.Messaging.RichMenu;
 
 namespace Ozakboy.Line.Tests.TestSupport;
@@ -266,6 +269,114 @@ internal sealed class FakeLineMessagingClient : ILineMessagingClient
     /// <inheritdoc />
     public Task<Result> ValidateRichMenuAsync(LineRichMenu richMenu, CancellationToken cancellationToken = default) =>
         Task.FromResult(Sent());
+
+    /// <inheritdoc />
+    public Task<Result<LineUserIdsPage>> GetFollowerIdsAsync(string? start = null, int? limit = null, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineGroupSummary>> GetGroupSummaryAsync(string groupId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<int>> GetGroupMemberCountAsync(string groupId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineUserIdsPage>> GetGroupMemberIdsAsync(string groupId, string? start = null, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> LeaveGroupAsync(string groupId, CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineUserProfile>> GetGroupMemberProfileAsync(string groupId, string userId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<int>> GetRoomMemberCountAsync(string roomId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineUserIdsPage>> GetRoomMemberIdsAsync(string roomId, string? start = null, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> LeaveRoomAsync(string roomId, CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineUserProfile>> GetRoomMemberProfileAsync(string roomId, string userId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> StartLoadingAnimationAsync(string chatId, int? loadingSeconds = null, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> MarkAsReadAsync(string userId, CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> ValidateMessagesAsync(
+        LineMessageValidationTarget target,
+        IReadOnlyList<LineMessage> messages,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> ValidateMessagesRawJsonAsync(
+        LineMessageValidationTarget target,
+        string messagesJson,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<string>> NarrowcastAsync(
+        IReadOnlyList<LineMessage> messages,
+        LineNarrowcastOptions? options = null,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineNarrowcastProgress>> GetNarrowcastProgressAsync(string requestId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineAudienceGroupCreated>> CreateUploadAudienceGroupAsync(
+        string description,
+        IReadOnlyList<string> userIds,
+        string? uploadDescription = null,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> AddAudienceGroupMembersAsync(
+        long audienceGroupId,
+        IReadOnlyList<string> userIds,
+        string? uploadDescription = null,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineAudienceGroupDetail>> GetAudienceGroupAsync(long audienceGroupId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineAudienceGroupPage>> GetAudienceGroupListAsync(
+        int page = 1,
+        int size = 20,
+        string? description = null,
+        CancellationToken cancellationToken = default) => throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result> DeleteAudienceGroupAsync(long audienceGroupId, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineMessageDeliveryInsight>> GetMessageDeliveryInsightAsync(DateOnly date, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineFollowersInsight>> GetFollowersInsightAsync(DateOnly date, CancellationToken cancellationToken = default) =>
+        throw NotArranged();
+
+    /// <inheritdoc />
+    public Task<Result<LineDemographicInsight>> GetDemographicInsightAsync(CancellationToken cancellationToken = default) =>
+        throw NotArranged();
 
     /// <summary>
     /// 送出類方法的共用結果。

@@ -1,0 +1,12 @@
+{
+  "source": "Get group chat member user IDs — GET /v2/bot/group/{groupId}/members/ids",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-09-25;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "memberIds": [
+      "U4af4980629...",
+      "U0c229f96c4...",
+      "U95afb1d4df..."
+    ],
+    "next": "jxEWCEEP..."
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "source": "Get data for multiple audiences — GET /v2/bot/audienceGroup/list",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-09-25;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "audienceGroups": [
+      {
+        "audienceGroupId": 1234567890123,
+        "createRoute": "OA_MANAGER",
+        "type": "CLICK",
+        "description": "audienceGroupName_01",
+        "status": "READY",
+        "audienceCount": 2,
+        "created": 1613698278,
+        "permission": "READ",
+        "isIfaAudience": false,
+        "expireTimestamp": 1629250278,
+        "requestId": "c9a0a4ba-...",
+        "clickUrl": "https://developers.line.biz/"
+      }
+    ],
+    "hasNextPage": false,
+    "totalCount": 1,
+    "readWriteAudienceGroupTotalCount": 0,
+    "page": 1,
+    "size": 40
+  }
+}

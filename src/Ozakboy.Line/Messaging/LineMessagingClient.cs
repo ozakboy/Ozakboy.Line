@@ -1040,7 +1040,19 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
     /// <param name="options">可選參數,決定重試鍵。The optional parameters, which decide the retry key.</param>
     /// <param name="writeBody">寫出內容欄位的委派。The delegate writing the body's fields.</param>
     /// <returns>建好的請求。The request.</returns>
-    private HttpRequestMessage Post(string uri, LinePushOptions? options, Action<Utf8JsonWriter> writeBody)
+    private HttpRequestMessage Post(string uri, LinePushOptions? options, Action<Utf8JsonWriter> writeBody) =>
+        JsonRequest(HttpMethod.Post, uri, options?.RetryKey, writeBody);
+
+    /// <summary>
+    /// 建立帶權杖與 JSON 內容的請求(POST 或 PUT)。
+    /// Builds an authorized request, POST or PUT, carrying a JSON body.
+    /// </summary>
+    /// <param name="method">HTTP 方法。The HTTP method.</param>
+    /// <param name="uri">目標位址。The target address.</param>
+    /// <param name="retryKey">重試鍵;有值才加標頭並標冪等。The retry key; the header and the idempotent mark are added only when set.</param>
+    /// <param name="writeBody">寫出內容欄位的委派。The delegate writing the body's fields.</param>
+    /// <returns>建好的請求。The request.</returns>
+    private HttpRequestMessage JsonRequest(HttpMethod method, string uri, Guid? retryKey, Action<Utf8JsonWriter> writeBody)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -1050,19 +1062,19 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             writer.WriteEndObject();
         }
 
-        var request = Authorize(new HttpRequestMessage(HttpMethod.Post, new Uri(uri, UriKind.Absolute))
+        var request = Authorize(new HttpRequestMessage(method, new Uri(uri, UriKind.Absolute))
         {
             Content = JsonContent(buffer.ToArray()),
         });
 
-        if (options?.RetryKey is { } retryKey)
+        if (retryKey is { } key)
         {
             // 兩件事必須同時做:標頭讓 LINE 去重,AsIdempotent 讓管線願意重試。
             // 只標其中一個的結果分別是「重試但會重複發送」與「帶了鍵卻永遠不重試」,兩種都不是本意。
             // Both are needed: the header is what lets LINE deduplicate, and AsIdempotent is what lets the
             // pipeline retry at all. Doing only one gives either retries that duplicate messages or a key that is
             // never used, and neither is the intent.
-            request.Headers.TryAddWithoutValidation("X-Line-Retry-Key", retryKey.ToString("D", CultureInfo.InvariantCulture));
+            request.Headers.TryAddWithoutValidation("X-Line-Retry-Key", key.ToString("D", CultureInfo.InvariantCulture));
             request.AsIdempotent();
         }
 

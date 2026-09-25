@@ -1,0 +1,7 @@
+{
+  "source": "Get number of message deliveries (unready) — GET /v2/bot/insight/message/delivery?date=yyyyMMdd",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-09-25;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "status": "unready"
+  }
+}

@@ -215,6 +215,101 @@ public static class LineEndpoints
     public const string UserRichMenuBase = "https://api.line.me/v2/bot/user/";
 
     /// <summary>
+    /// 好友清單(GET,query 為 <c>start</c> 與 <c>limit</c>)。
+    /// The follower list (GET, with <c>start</c> and <c>limit</c> in the query).
+    /// </summary>
+    /// <remarks>
+    /// 只有已認證或進階的官方帳號才拿得到;一般帳號 LINE 回 403。
+    /// Available only to verified or premium official accounts; LINE answers 403 for the rest.
+    /// </remarks>
+    public const string FollowerIds = "https://api.line.me/v2/bot/followers/ids";
+
+    /// <summary>
+    /// 群組端點的基底(路徑為 <c>/v2/bot/group/{groupId}/summary</c>、<c>/members/count</c>、
+    /// <c>/members/ids</c>、<c>/leave</c> 與 <c>/member/{userId}</c>)。
+    /// The base of the group endpoints: <c>/v2/bot/group/{groupId}/summary</c>, <c>/members/count</c>,
+    /// <c>/members/ids</c>, <c>/leave</c> and <c>/member/{userId}</c>.
+    /// </summary>
+    public const string GroupBase = "https://api.line.me/v2/bot/group/";
+
+    /// <summary>
+    /// 聊天室端點的基底(路徑為 <c>/v2/bot/room/{roomId}/members/count</c>、<c>/members/ids</c>、
+    /// <c>/leave</c> 與 <c>/member/{userId}</c>;聊天室沒有摘要端點)。
+    /// The base of the room endpoints: <c>/v2/bot/room/{roomId}/members/count</c>, <c>/members/ids</c>,
+    /// <c>/leave</c> and <c>/member/{userId}</c>. Rooms have no summary endpoint.
+    /// </summary>
+    public const string RoomBase = "https://api.line.me/v2/bot/room/";
+
+    /// <summary>
+    /// 顯示載入動畫(POST,內容為 <c>chatId</c> 與 <c>loadingSeconds</c>)。
+    /// Shows the loading animation (POST, with <c>chatId</c> and <c>loadingSeconds</c> in the body).
+    /// </summary>
+    public const string ChatLoadingStart = "https://api.line.me/v2/bot/chat/loading/start";
+
+    /// <summary>
+    /// 把使用者的訊息標為已讀(POST,內容為 <c>chat.userId</c>)。
+    /// Marks a user's messages as read (POST, with <c>chat.userId</c> in the body).
+    /// </summary>
+    public const string MarkAsRead = "https://api.line.me/v2/bot/message/markAsRead";
+
+    /// <summary>
+    /// 訊息驗證端點的基底(路徑後接 <c>push</c>、<c>multicast</c>、<c>broadcast</c>、<c>reply</c> 或
+    /// <c>narrowcast</c>)。只驗訊息物件,不送出、不計額度。
+    /// The base of the message validation endpoints, followed by <c>push</c>, <c>multicast</c>,
+    /// <c>broadcast</c>, <c>reply</c> or <c>narrowcast</c>. It checks the message objects only: nothing is sent and
+    /// no quota is used.
+    /// </summary>
+    public const string ValidateMessageBase = "https://api.line.me/v2/bot/message/validate/";
+
+    /// <summary>
+    /// 分眾推播(POST;回應是 202,請求識別碼在 <c>X-Line-Request-Id</c> 標頭)。
+    /// Narrowcast (POST; the response is a 202 whose request id is in the <c>X-Line-Request-Id</c> header).
+    /// </summary>
+    public const string NarrowcastMessage = "https://api.line.me/v2/bot/message/narrowcast";
+
+    /// <summary>
+    /// 查詢分眾推播的進度(GET,query 為 <c>requestId</c>)。
+    /// The narrowcast progress (GET, with <c>requestId</c> in the query).
+    /// </summary>
+    public const string NarrowcastProgress = "https://api.line.me/v2/bot/message/progress/narrowcast";
+
+    /// <summary>
+    /// 上傳型受眾:POST 建立、PUT 加成員。
+    /// Upload audiences: POST creates one, PUT adds members.
+    /// </summary>
+    public const string AudienceGroupUpload = "https://api.line.me/v2/bot/audienceGroup/upload";
+
+    /// <summary>
+    /// 受眾端點的基底(路徑後接 <c>{audienceGroupId}</c>,GET 查詢、DELETE 刪除)。
+    /// The base of the audience endpoints, followed by <c>{audienceGroupId}</c>: GET reads, DELETE deletes.
+    /// </summary>
+    public const string AudienceGroupBase = "https://api.line.me/v2/bot/audienceGroup/";
+
+    /// <summary>
+    /// 列出受眾(GET,query 為 <c>page</c>、<c>size</c> 與可選的 <c>description</c>)。
+    /// Lists audiences (GET, with <c>page</c>, <c>size</c> and an optional <c>description</c> in the query).
+    /// </summary>
+    public const string AudienceGroupList = "https://api.line.me/v2/bot/audienceGroup/list";
+
+    /// <summary>
+    /// 某一天的訊息傳送數(GET,query 為 <c>date</c>,格式 <c>yyyyMMdd</c>)。
+    /// The number of messages delivered on one day (GET, with <c>date</c> as <c>yyyyMMdd</c> in the query).
+    /// </summary>
+    public const string InsightMessageDelivery = "https://api.line.me/v2/bot/insight/message/delivery";
+
+    /// <summary>
+    /// 某一天的好友數(GET,query 為 <c>date</c>,格式 <c>yyyyMMdd</c>)。
+    /// The number of followers on one day (GET, with <c>date</c> as <c>yyyyMMdd</c> in the query).
+    /// </summary>
+    public const string InsightFollowers = "https://api.line.me/v2/bot/insight/followers";
+
+    /// <summary>
+    /// 好友的屬性分布(GET,無參數)。
+    /// The friend demographics (GET, no parameters).
+    /// </summary>
+    public const string InsightDemographic = "https://api.line.me/v2/bot/insight/demographic";
+
+    /// <summary>
     /// id_token 的發行者,本地驗證時必須逐字相符。
     /// The id_token issuer, which local validation compares verbatim.
     /// </summary>

@@ -83,4 +83,40 @@ public static class LineMessagingLimits
     /// The width of an imagemap's base image, which LINE fixes at 1040; the height follows the aspect ratio.
     /// </summary>
     public const int ImagemapBaseWidth = 1040;
+
+    /// <summary>
+    /// 載入動畫的秒數下限。
+    /// The minimum number of seconds for the loading animation.
+    /// </summary>
+    public const int MinLoadingSeconds = 5;
+
+    /// <summary>
+    /// 載入動畫的秒數上限。
+    /// The maximum number of seconds for the loading animation.
+    /// </summary>
+    public const int MaxLoadingSeconds = 60;
+
+    /// <summary>
+    /// 載入動畫的秒數必須是這個數的倍數。
+    /// The loading animation's seconds must be a multiple of this.
+    /// </summary>
+    public const int LoadingSecondsStep = 5;
+
+    /// <summary>
+    /// 好友清單端點單頁筆數上限(<c>limit</c> 參數)。
+    /// The per-page cap of the follower list endpoint, its <c>limit</c> parameter.
+    /// </summary>
+    public const int MaxFollowerIdsPerPage = 1000;
+
+    /// <summary>
+    /// 受眾清單端點單頁筆數上限(<c>size</c> 參數)。
+    /// The per-page cap of the audience group list endpoint, its <c>size</c> parameter.
+    /// </summary>
+    public const int MaxAudienceGroupsPerPage = 40;
+
+    /// <summary>
+    /// 建立或加入上傳型受眾時,單次請求的使用者人數上限。
+    /// The maximum number of users in one request that creates or adds to an upload audience.
+    /// </summary>
+    public const int MaxAudienceMembersPerRequest = 10000;
 }

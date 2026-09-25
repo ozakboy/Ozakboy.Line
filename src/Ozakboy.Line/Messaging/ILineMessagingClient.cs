@@ -1,5 +1,8 @@
 using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Audience;
+using Ozakboy.Line.Messaging.Insight;
 using Ozakboy.Line.Messaging.Messages;
+using Ozakboy.Line.Messaging.Narrowcast;
 using Ozakboy.Line.Messaging.RichMenu;
 
 namespace Ozakboy.Line.Messaging;
@@ -460,4 +463,295 @@ public interface ILineMessagingClient
     /// <see cref="LineErrorDataKeys.LineDetails"/>.
     /// </returns>
     Task<Result> ValidateRichMenuAsync(LineRichMenu richMenu, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 分頁列出所有好友的使用者識別碼。
+    /// Lists every friend's user identifier, one page at a time.
+    /// </summary>
+    /// <param name="start">上一頁回的 <see cref="LineUserIdsPage.Next"/>;第一頁為 <see langword="null"/>。The previous page's <see cref="LineUserIdsPage.Next"/>, or <see langword="null"/> for the first page.</param>
+    /// <param name="limit">每頁筆數,1 到 <see cref="LineMessagingLimits.MaxFollowerIdsPerPage"/>;不給時沿用 LINE 的預設(300)。The page size, 1 to <see cref="LineMessagingLimits.MaxFollowerIdsPerPage"/>; LINE's default (300) when omitted.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>一頁識別碼。One page of identifiers.</returns>
+    /// <remarks>
+    /// 只有已認證或進階的官方帳號才拿得到,一般帳號 LINE 回 403 —— 那是帳號等級的事實,不是程式錯誤。
+    /// Available only to verified or premium official accounts; LINE answers 403 for the rest, which is a fact
+    /// about the account's tier rather than a defect in the caller.
+    /// </remarks>
+    Task<Result<LineUserIdsPage>> GetFollowerIdsAsync(string? start = null, int? limit = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢群組的摘要(名稱與圖片)。
+    /// Reads a group's summary: its name and picture.
+    /// </summary>
+    /// <param name="groupId">群組識別碼。The group identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>摘要。The summary.</returns>
+    Task<Result<LineGroupSummary>> GetGroupSummaryAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢群組的成員人數(不含官方帳號自己)。
+    /// Reads a group's member count, excluding the official account itself.
+    /// </summary>
+    /// <param name="groupId">群組識別碼。The group identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>人數。The count.</returns>
+    Task<Result<int>> GetGroupMemberCountAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 分頁列出群組成員的使用者識別碼。
+    /// Lists a group's member identifiers, one page at a time.
+    /// </summary>
+    /// <param name="groupId">群組識別碼。The group identifier.</param>
+    /// <param name="start">上一頁回的 <see cref="LineUserIdsPage.Next"/>;第一頁為 <see langword="null"/>。The previous page's <see cref="LineUserIdsPage.Next"/>, or <see langword="null"/> for the first page.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>一頁識別碼。One page of identifiers.</returns>
+    /// <remarks>
+    /// 與好友清單一樣只開放給已認證或進階帳號。
+    /// As with the follower list, available only to verified or premium accounts.
+    /// </remarks>
+    Task<Result<LineUserIdsPage>> GetGroupMemberIdsAsync(string groupId, string? start = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 讓官方帳號離開群組。
+    /// Has the official account leave a group.
+    /// </summary>
+    /// <param name="groupId">群組識別碼。The group identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> LeaveGroupAsync(string groupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢群組裡某位成員的個人檔案。
+    /// Reads one group member's profile.
+    /// </summary>
+    /// <param name="groupId">群組識別碼。The group identifier.</param>
+    /// <param name="userId">使用者識別碼。The user identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 個人檔案。與 <see cref="GetProfileAsync"/> 不同,這裡<b>不要求</b>對方是官方帳號的好友,只要同在群組裡。
+    /// 回的欄位只有識別碼、顯示名稱與大頭貼;狀態訊息與語言是 <see langword="null"/>。
+    /// The profile. Unlike <see cref="GetProfileAsync"/> this does <b>not</b> require the user to be a friend of
+    /// the account, only to share the group. Only the id, display name and picture come back; the status message
+    /// and language are <see langword="null"/>.
+    /// </returns>
+    Task<Result<LineUserProfile>> GetGroupMemberProfileAsync(string groupId, string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢聊天室的成員人數(不含官方帳號自己)。
+    /// Reads a room's member count, excluding the official account itself.
+    /// </summary>
+    /// <param name="roomId">聊天室識別碼。The room identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>人數。The count.</returns>
+    Task<Result<int>> GetRoomMemberCountAsync(string roomId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 分頁列出聊天室成員的使用者識別碼。
+    /// Lists a room's member identifiers, one page at a time.
+    /// </summary>
+    /// <param name="roomId">聊天室識別碼。The room identifier.</param>
+    /// <param name="start">上一頁回的 <see cref="LineUserIdsPage.Next"/>;第一頁為 <see langword="null"/>。The previous page's <see cref="LineUserIdsPage.Next"/>, or <see langword="null"/> for the first page.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>一頁識別碼。One page of identifiers.</returns>
+    Task<Result<LineUserIdsPage>> GetRoomMemberIdsAsync(string roomId, string? start = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 讓官方帳號離開聊天室。
+    /// Has the official account leave a room.
+    /// </summary>
+    /// <param name="roomId">聊天室識別碼。The room identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> LeaveRoomAsync(string roomId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢聊天室裡某位成員的個人檔案。
+    /// Reads one room member's profile.
+    /// </summary>
+    /// <param name="roomId">聊天室識別碼。The room identifier.</param>
+    /// <param name="userId">使用者識別碼。The user identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>個人檔案,欄位範圍同 <see cref="GetGroupMemberProfileAsync"/>。The profile, with the same fields as <see cref="GetGroupMemberProfileAsync"/>.</returns>
+    Task<Result<LineUserProfile>> GetRoomMemberProfileAsync(string roomId, string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 在一對一聊天裡顯示「輸入中」的載入動畫。
+    /// Shows the typing-style loading animation in a one-to-one chat.
+    /// </summary>
+    /// <param name="chatId">使用者識別碼(只支援一對一聊天)。The user identifier; one-to-one chats only.</param>
+    /// <param name="loadingSeconds">
+    /// 顯示幾秒:<see cref="LineMessagingLimits.MinLoadingSeconds"/> 到
+    /// <see cref="LineMessagingLimits.MaxLoadingSeconds"/> 之間、<see cref="LineMessagingLimits.LoadingSecondsStep"/>
+    /// 的倍數;不給時沿用 LINE 的預設(20 秒)。
+    /// How long to show it: a multiple of <see cref="LineMessagingLimits.LoadingSecondsStep"/> between
+    /// <see cref="LineMessagingLimits.MinLoadingSeconds"/> and <see cref="LineMessagingLimits.MaxLoadingSeconds"/>;
+    /// LINE's default (20 seconds) when omitted.
+    /// </param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    /// <remarks>
+    /// 動畫在官方帳號送出任何訊息時提前結束,而且只有使用者正開著那個聊天室時才看得到。
+    /// 秒數不合規在本地就失敗(<see cref="LineErrorCodes.InvalidLoadingSeconds"/>),不送出。
+    /// The animation ends early once the account sends any message, and is visible only while the user has that
+    /// chat open. Non-conforming seconds fail locally (<see cref="LineErrorCodes.InvalidLoadingSeconds"/>)
+    /// without sending.
+    /// </remarks>
+    Task<Result> StartLoadingAnimationAsync(string chatId, int? loadingSeconds = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 把某位使用者傳來的訊息全部標為已讀。
+    /// Marks every message from one user as read.
+    /// </summary>
+    /// <param name="userId">使用者識別碼。The user identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    /// <remarks>
+    /// 只在官方帳號的已讀模式(<see cref="LineBotInfo.MarkAsReadMode"/>)是 <c>manual</c> 時有意義;
+    /// <c>auto</c> 模式下 LINE 自己會標。
+    /// Meaningful only when the account's read mode (<see cref="LineBotInfo.MarkAsReadMode"/>) is
+    /// <c>manual</c>; in <c>auto</c> mode LINE marks them itself.
+    /// </remarks>
+    Task<Result> MarkAsReadAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 請 LINE 驗證一批訊息物件,但不送出、不計額度。
+    /// Has LINE validate a batch of message objects without sending them or using quota.
+    /// </summary>
+    /// <param name="target">要模擬的送出方式。The kind of send to simulate.</param>
+    /// <param name="messages">訊息,1 到 5 則。The messages, between one and five.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 合規時為成功;不合規時的失敗帶有 LINE 指出的欄位(見 <see cref="LineErrorDataKeys.LineDetails"/>)。
+    /// 本地能檢查的上限(則數、快速回覆、範本、圖片地圖)會先在本地擋下,不送出。
+    /// Success when the batch conforms; otherwise a failure carrying the fields LINE named in
+    /// <see cref="LineErrorDataKeys.LineDetails"/>. Limits that can be checked locally (count, quick reply,
+    /// template, imagemap) are stopped locally first, without sending.
+    /// </returns>
+    Task<Result> ValidateMessagesAsync(LineMessageValidationTarget target, IReadOnlyList<LineMessage> messages, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 請 LINE 驗證原始 JSON 的訊息,但不送出、不計額度。
+    /// Has LINE validate raw JSON messages without sending them or using quota.
+    /// </summary>
+    /// <param name="target">要模擬的送出方式。The kind of send to simulate.</param>
+    /// <param name="messagesJson">單一訊息物件或訊息陣列的 JSON。A single message object or an array of them, as JSON.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>合規時為成功。Success when the batch conforms.</returns>
+    Task<Result> ValidateMessagesRawJsonAsync(LineMessageValidationTarget target, string messagesJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 分眾推播:依受眾或屬性篩選送給一部分好友。
+    /// Narrowcasts: sends to a subset of friends chosen by audience or demographics.
+    /// </summary>
+    /// <param name="messages">訊息,1 到 5 則。The messages, between one and five.</param>
+    /// <param name="options">收件對象、篩選、上限與重試鍵。The recipients, filter, cap and retry key.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// LINE 的請求識別碼(<c>X-Line-Request-Id</c> 標頭),之後用它查 <see cref="GetNarrowcastProgressAsync"/>。
+    /// LINE's request id from the <c>X-Line-Request-Id</c> header, used afterwards with
+    /// <see cref="GetNarrowcastProgressAsync"/>.
+    /// </returns>
+    /// <remarks>
+    /// 回 2xx 只代表 LINE 收下了,訊息是<b>非同步</b>送出的;成功與失敗人數要看進度端點。
+    /// 與推播相同,只有帶了重試鍵才會重試。
+    /// A 2xx means only that LINE accepted it; delivery is <b>asynchronous</b>, and the success and failure counts
+    /// come from the progress endpoint. As with a push, it is retried only with a retry key.
+    /// </remarks>
+    Task<Result<string>> NarrowcastAsync(IReadOnlyList<LineMessage> messages, LineNarrowcastOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢一次分眾推播的進度。
+    /// Reads the progress of one narrowcast.
+    /// </summary>
+    /// <param name="requestId"><see cref="NarrowcastAsync"/> 回的請求識別碼。The request id from <see cref="NarrowcastAsync"/>.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>進度。The progress.</returns>
+    Task<Result<LineNarrowcastProgress>> GetNarrowcastProgressAsync(string requestId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 建立上傳型受眾,成員以使用者識別碼指定。
+    /// Creates an upload audience whose members are named by user id.
+    /// </summary>
+    /// <param name="description">受眾名稱(最長 120 字元,同帳號內不可重複)。The audience name, up to 120 characters, unique within the account.</param>
+    /// <param name="userIds">
+    /// 成員,0 到 <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/> 位;可以先建空的再用
+    /// <see cref="AddAudienceGroupMembersAsync"/> 加。
+    /// The members, zero to <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/>; an empty audience can
+    /// be created first and filled with <see cref="AddAudienceGroupMembersAsync"/>.
+    /// </param>
+    /// <param name="uploadDescription">這批成員的說明;不需要時為 <see langword="null"/>。A note on this batch, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>建立結果,含受眾識別碼。The creation result, including the audience id.</returns>
+    /// <remarks>
+    /// 受眾要有足夠的成員(LINE 目前要求 100 人以上)才會變成 READY;人數不足的受眾建得起來,但分眾推播會失敗。
+    /// An audience becomes READY only with enough members (LINE currently asks for 100 or more); a smaller one
+    /// can be created, but a narrowcast to it fails.
+    /// </remarks>
+    Task<Result<LineAudienceGroupCreated>> CreateUploadAudienceGroupAsync(string description, IReadOnlyList<string> userIds, string? uploadDescription = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 把使用者加進既有的上傳型受眾。
+    /// Adds users to an existing upload audience.
+    /// </summary>
+    /// <param name="audienceGroupId">受眾識別碼。The audience identifier.</param>
+    /// <param name="userIds">成員,1 到 <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/> 位。The members, one to <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/>.</param>
+    /// <param name="uploadDescription">這批成員的說明;不需要時為 <see langword="null"/>。A note on this batch, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> AddAudienceGroupMembersAsync(long audienceGroupId, IReadOnlyList<string> userIds, string? uploadDescription = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢單一受眾。
+    /// Reads one audience.
+    /// </summary>
+    /// <param name="audienceGroupId">受眾識別碼。The audience identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>受眾與對它做過的工作。The audience and the jobs run against it.</returns>
+    Task<Result<LineAudienceGroupDetail>> GetAudienceGroupAsync(long audienceGroupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 分頁列出受眾。
+    /// Lists audiences, one page at a time.
+    /// </summary>
+    /// <param name="page">頁碼,從 1 起算。The page number, counting from 1.</param>
+    /// <param name="size">每頁筆數,1 到 <see cref="LineMessagingLimits.MaxAudienceGroupsPerPage"/>。The page size, 1 to <see cref="LineMessagingLimits.MaxAudienceGroupsPerPage"/>.</param>
+    /// <param name="description">只列名稱含這段文字的受眾;不篩選時為 <see langword="null"/>。Only audiences whose name contains this, or <see langword="null"/> for all.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>一頁受眾。One page of audiences.</returns>
+    Task<Result<LineAudienceGroupPage>> GetAudienceGroupListAsync(int page = 1, int size = 20, string? description = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 刪除受眾。
+    /// Deletes an audience.
+    /// </summary>
+    /// <param name="audienceGroupId">受眾識別碼。The audience identifier.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>成功或失敗。Success or failure.</returns>
+    Task<Result> DeleteAudienceGroupAsync(long audienceGroupId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢某一天各管道的訊息傳送數。
+    /// Reads the number of messages delivered on one day, by channel.
+    /// </summary>
+    /// <param name="date">日期(以帳號所在時區計)。The date, in the account's time zone.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>傳送數;狀態不是 ready 時數字欄位為 <see langword="null"/>。The counts; the numbers are <see langword="null"/> when the status is not ready.</returns>
+    Task<Result<LineMessageDeliveryInsight>> GetMessageDeliveryInsightAsync(DateOnly date, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢某一天的好友數。
+    /// Reads the number of followers on one day.
+    /// </summary>
+    /// <param name="date">日期(以帳號所在時區計)。The date, in the account's time zone.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>好友數。The follower figures.</returns>
+    Task<Result<LineFollowersInsight>> GetFollowersInsightAsync(DateOnly date, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 查詢好友的屬性分布。
+    /// Reads the friend demographics.
+    /// </summary>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>屬性分布;好友不足 20 人時 <see cref="LineDemographicInsight.Available"/> 為 <see langword="false"/>。The demographics; <see cref="LineDemographicInsight.Available"/> is <see langword="false"/> with fewer than 20 friends.</returns>
+    Task<Result<LineDemographicInsight>> GetDemographicInsightAsync(CancellationToken cancellationToken = default);
 }

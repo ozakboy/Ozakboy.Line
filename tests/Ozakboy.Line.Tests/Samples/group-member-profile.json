@@ -1,0 +1,9 @@
+{
+  "source": "Get group chat member profile — GET /v2/bot/group/{groupId}/member/{userId}",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-09-25;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "displayName": "LINE taro",
+    "userId": "U4af4980629...",
+    "pictureUrl": "https://profile.line-scdn.net/abcdefghijklmn"
+  }
+}

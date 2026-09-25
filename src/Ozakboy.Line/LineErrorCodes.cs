@@ -70,6 +70,26 @@ public static class LineErrorCodes
     public const string InvalidImagemap = "line.validation.invalid_imagemap";
 
     /// <summary>
+    /// 載入動畫的秒數不是 5 到 60 之間的 5 的倍數。
+    /// The loading animation's seconds are not a multiple of 5 between 5 and 60.
+    /// </summary>
+    public const string InvalidLoadingSeconds = "line.validation.invalid_loading_seconds";
+
+    /// <summary>
+    /// 分頁參數超出端點允許的範圍(好友清單的 <c>limit</c>、受眾清單的 <c>page</c> / <c>size</c>)。
+    /// A paging argument is outside the endpoint's range: the follower list's <c>limit</c>, or the audience list's
+    /// <c>page</c> / <c>size</c>.
+    /// </summary>
+    public const string InvalidPageSize = "line.validation.invalid_page_size";
+
+    /// <summary>
+    /// 一次加入受眾的人數不在 1 到 <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/> 之間。
+    /// The number of users added to an audience in one request is outside 1 to
+    /// <see cref="LineMessagingLimits.MaxAudienceMembersPerRequest"/>.
+    /// </summary>
+    public const string TooManyAudienceMembers = "line.validation.too_many_audience_members";
+
+    /// <summary>
     /// 範本裡有佔位符沒有對應的值。
     /// The template has placeholders with no value supplied.
     /// </summary>
