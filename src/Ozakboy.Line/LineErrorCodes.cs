@@ -56,6 +56,20 @@ public static class LineErrorCodes
     public const string TooManyQuickReplyItems = "line.validation.too_many_quick_reply_items";
 
     /// <summary>
+    /// 範本訊息不成立:動作數或欄數超出 <see cref="LineMessagingLimits"/> 的範圍,或輪播各欄的動作數不一致。
+    /// The template message does not hold together: an action or column count outside the range in
+    /// <see cref="LineMessagingLimits"/>, or carousel columns with differing action counts.
+    /// </summary>
+    public const string InvalidTemplate = "line.validation.invalid_template";
+
+    /// <summary>
+    /// 圖片地圖不成立:區域數不在 1 到 <see cref="LineMessagingLimits.MaxImagemapActions"/> 之間。
+    /// The imagemap does not hold together: the area count is outside 1 to
+    /// <see cref="LineMessagingLimits.MaxImagemapActions"/>.
+    /// </summary>
+    public const string InvalidImagemap = "line.validation.invalid_imagemap";
+
+    /// <summary>
     /// 範本裡有佔位符沒有對應的值。
     /// The template has placeholders with no value supplied.
     /// </summary>

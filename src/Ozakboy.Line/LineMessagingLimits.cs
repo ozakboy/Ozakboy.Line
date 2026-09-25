@@ -47,4 +47,40 @@ public static class LineMessagingLimits
     /// The maximum number of users in one bulk rich menu link or unlink.
     /// </summary>
     public const int RichMenuBulkUsers = 500;
+
+    /// <summary>
+    /// 按鈕範本(<c>buttons</c>)的動作數上限。
+    /// The maximum number of actions on a buttons template.
+    /// </summary>
+    public const int MaxButtonsTemplateActions = 4;
+
+    /// <summary>
+    /// 確認範本(<c>confirm</c>)的動作數,必須恰好是這個數。
+    /// The number of actions on a confirm template, which must be exactly this.
+    /// </summary>
+    public const int ConfirmTemplateActions = 2;
+
+    /// <summary>
+    /// 輪播範本(<c>carousel</c>)與圖片輪播範本(<c>image_carousel</c>)的欄數上限。
+    /// The maximum number of columns on a carousel or image carousel template.
+    /// </summary>
+    public const int MaxCarouselColumns = 10;
+
+    /// <summary>
+    /// 輪播範本每一欄的動作數上限;所有欄的動作數還必須一致。
+    /// The maximum number of actions per carousel column; every column must also carry the same number.
+    /// </summary>
+    public const int MaxCarouselColumnActions = 3;
+
+    /// <summary>
+    /// 圖片地圖(<c>imagemap</c>)的可點擊區域數上限。
+    /// The maximum number of tappable areas on an imagemap.
+    /// </summary>
+    public const int MaxImagemapActions = 50;
+
+    /// <summary>
+    /// 圖片地圖底圖的寬度;LINE 規定固定為 1040,高度依比例自訂。
+    /// The width of an imagemap's base image, which LINE fixes at 1040; the height follows the aspect ratio.
+    /// </summary>
+    public const int ImagemapBaseWidth = 1040;
 }

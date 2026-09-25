@@ -305,4 +305,29 @@ public sealed class LineWebhookTests
         Assert.AreEqual(b.Destination, a.Destination);
         Assert.AreEqual(b.Events[0].Type, a.Events[0].Type);
     }
+
+    [TestMethod]
+    public void Parse_VideoPlayCompleteEvent_ReadsTrackingId()
+    {
+        // trackingId 是送影片時自己填的值;能讀回來,「有沒有看完」才閉得了環。
+        var result = LineWebhookParser.Parse(
+            """{"destination":"Ubot","events":[{"type":"videoPlayComplete","mode":"active","timestamp":1700000000000,"webhookEventId":"e1","deliveryContext":{"isRedelivery":false},"replyToken":"rt","source":{"type":"user","userId":"U1"},"videoPlayComplete":{"trackingId":"track-1"}}]}""");
+
+        Assert.IsTrue(result.TryGetValue(out var payload));
+        var evt = payload.Events[0];
+        Assert.AreEqual(LineWebhookEventTypes.VideoPlayComplete, evt.Type);
+        Assert.IsNotNull(evt.VideoPlayComplete);
+        Assert.AreEqual("track-1", evt.VideoPlayComplete.TrackingId);
+    }
+
+    [TestMethod]
+    public void Parse_MessageEvent_HasNoVideoPlayComplete()
+    {
+        var result = LineWebhookParser.Parse(
+            """{"destination":"Ubot","events":[{"type":"message","mode":"active","timestamp":1700000000000,"webhookEventId":"e1","source":{"type":"user","userId":"U1"},"message":{"id":"m1","type":"text","text":"嗨","quoteToken":"qt-1"}}]}""");
+
+        Assert.IsTrue(result.TryGetValue(out var payload));
+        Assert.IsNull(payload.Events[0].VideoPlayComplete);
+        Assert.AreEqual("qt-1", payload.Events[0].Message!.QuoteToken);
+    }
 }

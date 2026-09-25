@@ -62,11 +62,12 @@ public sealed class RawMessage : LineMessage
     /// </summary>
     /// <param name="writer">JSON 寫入器。The JSON writer.</param>
     /// <remarks>
-    /// <see cref="LineMessage.QuickReply"/> 在這個型別上<b>不生效</b>:呼叫端給的物件可能已經有
-    /// <c>quickReply</c>,再寫一次會產生重複欄位。要加快速回覆請直接寫進這個物件裡。
-    /// <see cref="LineMessage.QuickReply"/> has <b>no effect</b> on this type: the caller's object may already
-    /// carry a <c>quickReply</c>, and writing another would produce a duplicate field. Put the quick reply into
-    /// the object itself.
+    /// <see cref="LineMessage.QuickReply"/> 與 <see cref="LineMessage.Sender"/> 在這個型別上<b>不生效</b>:
+    /// 呼叫端給的物件可能已經有 <c>quickReply</c> 或 <c>sender</c>,再寫一次會產生重複欄位。
+    /// 要加這兩樣請直接寫進這個物件裡。
+    /// <see cref="LineMessage.QuickReply"/> and <see cref="LineMessage.Sender"/> have <b>no effect</b> on this
+    /// type: the caller's object may already carry a <c>quickReply</c> or a <c>sender</c>, and writing another
+    /// would produce a duplicate field. Put them into the object itself.
     /// </remarks>
     internal override void WriteTo(Utf8JsonWriter writer) => Contents.WriteTo(writer);
 

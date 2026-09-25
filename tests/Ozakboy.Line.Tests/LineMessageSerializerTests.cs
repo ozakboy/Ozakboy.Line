@@ -165,6 +165,65 @@ public sealed class LineMessageSerializerTests
     }
 
     [TestMethod]
+    public void Sender_IsWrittenWhenSet()
+    {
+        var json = Serialize(new TextMessage("哈囉")
+        {
+            Sender = new Messaging.LineMessageSender { Name = "客服小幫手", IconUrl = "https://example.com/icon.png" },
+        });
+
+        Assert.AreEqual("客服小幫手", json.GetProperty("sender").GetProperty("name").GetString());
+        Assert.AreEqual("https://example.com/icon.png", json.GetProperty("sender").GetProperty("iconUrl").GetString());
+    }
+
+    [TestMethod]
+    public void Sender_OnlyName_OmitsIconUrl()
+    {
+        var json = Serialize(new StickerMessage("446", "1988") { Sender = new Messaging.LineMessageSender { Name = "小幫手" } });
+
+        Assert.AreEqual("小幫手", json.GetProperty("sender").GetProperty("name").GetString());
+        Assert.IsFalse(json.GetProperty("sender").TryGetProperty("iconUrl", out _));
+    }
+
+    [TestMethod]
+    public void Sender_Empty_IsNotWritten()
+    {
+        // 兩個欄位都空的 sender 對 LINE 沒有意義,不寫出。
+        var json = Serialize(new TextMessage("哈囉") { Sender = new Messaging.LineMessageSender() });
+
+        Assert.IsFalse(json.TryGetProperty("sender", out _));
+    }
+
+    [TestMethod]
+    public void RawMessage_IgnoresSenderAndQuickReply()
+    {
+        // 原樣訊息整份由呼叫端提供,再寫一次 sender 會產生重複欄位。
+        using var contents = JsonDocument.Parse("""{"type":"text","text":"原樣"}""");
+        var json = Serialize(new RawMessage(contents.RootElement)
+        {
+            Sender = new Messaging.LineMessageSender { Name = "小幫手" },
+        });
+
+        Assert.IsFalse(json.TryGetProperty("sender", out _));
+    }
+
+    [TestMethod]
+    public void VideoMessage_WithTrackingId_WritesTrackingId()
+    {
+        var json = Serialize(new VideoMessage("https://example.com/o.mp4", "https://example.com/p.jpg") { TrackingId = "track-1" });
+
+        Assert.AreEqual("track-1", json.GetProperty("trackingId").GetString());
+    }
+
+    [TestMethod]
+    public void VideoMessage_WithoutTrackingId_OmitsTrackingId()
+    {
+        var json = Serialize(new VideoMessage("https://example.com/o.mp4", "https://example.com/p.jpg"));
+
+        Assert.IsFalse(json.TryGetProperty("trackingId", out _));
+    }
+
+    [TestMethod]
     public void WriteMessages_ProducesOneElementPerMessage()
     {
         var elements = LineMessageSerializer.ToJsonElements([new TextMessage("一"), new StickerMessage("446", "1988")]);

@@ -92,6 +92,12 @@ public sealed class LineWebhookEvent
     public LineWebhookFollow? Follow { get; init; }
 
     /// <summary>
+    /// 看完影片的附加資訊;只有 <c>videoPlayComplete</c> 事件有。
+    /// The video completion details, present only on a <c>videoPlayComplete</c> event.
+    /// </summary>
+    public LineWebhookVideoPlayComplete? VideoPlayComplete { get; init; }
+
+    /// <summary>
     /// 這個事件的原始 JSON。
     /// This event's original JSON.
     /// </summary>

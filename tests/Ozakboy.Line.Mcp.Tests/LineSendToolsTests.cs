@@ -48,6 +48,39 @@ public sealed class LineSendToolsTests
     }
 
     [TestMethod]
+    public async Task SendPush_TemplateMessageJson_IsAcceptedAndForwardedVerbatim()
+    {
+        // 範本與圖片地圖在核心是強型別,但 MCP 這邊收的是 JSON:任何帶 type 的訊息物件都要能原樣進佇列、原樣送出。
+        var (tools, messaging, outbox) = CreateTools(LineMcpSendMode.Direct);
+        const string messagesJson = """[{"type":"template","altText":"選單","template":{"type":"confirm","text":"確定嗎?","actions":[{"type":"message","label":"是","text":"是"},{"type":"message","label":"否","text":"否"}]}}]""";
+
+        var json = Parse(await tools.SendPushAsync("U1", messagesJson: messagesJson));
+
+        Assert.IsTrue(json.GetProperty("ok").GetBoolean());
+        Assert.AreEqual(1, messaging.Pushes.Count);
+        using var sent = JsonDocument.Parse(messaging.Pushes[0].MessagesJson);
+        Assert.AreEqual("confirm", sent.RootElement[0].GetProperty("template").GetProperty("type").GetString());
+
+        var items = await outbox.ListAsync();
+        Assert.AreEqual("(template 訊息)", items[0].Summary);
+    }
+
+    [TestMethod]
+    public async Task SendBroadcast_ImagemapMessageJson_IsAcceptedInReviewMode()
+    {
+        var (tools, messaging, outbox) = CreateTools();
+        const string messagesJson = """[{"type":"imagemap","baseUrl":"https://example.com/map","altText":"地圖","baseSize":{"width":1040,"height":1040},"actions":[{"type":"uri","linkUri":"https://example.com","area":{"x":0,"y":0,"width":1040,"height":1040}}]}]""";
+
+        var json = Parse(await tools.SendBroadcastAsync(messagesJson: messagesJson));
+
+        Assert.IsTrue(json.GetProperty("ok").GetBoolean());
+        Assert.AreEqual(0, messaging.Broadcasts.Count, "待審模式下不送。");
+        var items = await outbox.ListAsync();
+        Assert.AreEqual(1, items.Count);
+        Assert.AreEqual("(imagemap 訊息)", items[0].Summary);
+    }
+
+    [TestMethod]
     public async Task SendPush_DirectMode_SendsAndRecordsAsSent()
     {
         var (tools, messaging, outbox) = CreateTools(LineMcpSendMode.Direct);

@@ -132,6 +132,7 @@ public static class LineWebhookParser
             Message = ReadMessage(element),
             Postback = ReadPostback(element),
             Follow = ReadFollow(element),
+            VideoPlayComplete = ReadVideoPlayComplete(element),
 
             // Clone 之後才保存:JsonElement 的生命週期綁在 JsonDocument 上,而那份 document 在
             // Parse 回傳之前就已經釋放,不 Clone 的話呼叫端拿到的是一個會擲出例外的空殼。
@@ -261,6 +262,22 @@ public static class LineWebhookParser
             && ReadBoolean(follow, "isUnblocked") == true;
 
         return new LineWebhookFollow { IsUnblocked = isUnblocked };
+    }
+
+    /// <summary>
+    /// 讀出看完影片的附加資訊。
+    /// Reads the video completion details.
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <returns>沒有這個物件時為 <see langword="null"/>。<see langword="null"/> when the object is absent.</returns>
+    private static LineWebhookVideoPlayComplete? ReadVideoPlayComplete(JsonElement element)
+    {
+        if (!element.TryGetProperty("videoPlayComplete", out var details) || details.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new LineWebhookVideoPlayComplete { TrackingId = ReadString(details, "trackingId") ?? string.Empty };
     }
 
     /// <summary>

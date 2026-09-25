@@ -901,17 +901,18 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
     }
 
     /// <summary>
-    /// 送出前檢查整批訊息:則數,以及每一則的快速回覆按鈕數。
-    /// Checks the whole batch before sending: the message count, and each message's quick reply buttons.
+    /// 送出前檢查整批訊息:則數,以及每一則自己的上限(快速回覆按鈕數、範本動作數、圖片地圖區域數)。
+    /// Checks the whole batch before sending: the message count, and each message's own limits (quick reply
+    /// buttons, template actions, imagemap areas).
     /// </summary>
     /// <param name="messages">訊息。The messages.</param>
     /// <returns>全部通過時為成功。Success when everything passes.</returns>
     /// <remarks>
-    /// 快速回覆超量在 LINE 那頭是整則訊息被退回,而回來的 400 只說「請求內容有 1 個錯誤」,
-    /// 不會說是第幾則訊息的第幾顆按鈕。在本地檢查,錯誤訊息才說得出實際的數量。
-    /// An oversized quick reply has LINE reject the whole message, and the 400 that comes back says only that the
-    /// body has one error — not which message, and not which button. Checked locally, the message can say how
-    /// many there actually were.
+    /// 超量在 LINE 那頭是整則訊息被退回,而回來的 400 只說「請求內容有 1 個錯誤」,
+    /// 不會說是第幾則訊息的哪個欄位。在本地檢查,錯誤訊息才說得出實際的數量。
+    /// Going over has LINE reject the whole message, and the 400 that comes back says only that the body has one
+    /// error — not which message, and not which field. Checked locally, the message can say how many there
+    /// actually were.
     /// </remarks>
     private static Result ValidateMessages(IReadOnlyList<LineMessage> messages)
     {
@@ -923,13 +924,10 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
 
         for (var index = 0; index < messages.Count; index++)
         {
-            if (messages[index].QuickReply is { } quickReply)
+            var message = messages[index].Validate();
+            if (message.IsFailure)
             {
-                var quickReplyResult = quickReply.Validate();
-                if (quickReplyResult.IsFailure)
-                {
-                    return quickReplyResult;
-                }
+                return message;
             }
         }
 

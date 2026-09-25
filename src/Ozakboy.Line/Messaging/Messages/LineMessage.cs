@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages;
 
@@ -57,6 +58,38 @@ public abstract class LineMessage
     public LineQuickReply? QuickReply { get; set; }
 
     /// <summary>
+    /// 改寫這則訊息顯示的傳送者名稱與頭像;不需要時為 <see langword="null"/>。
+    /// Overrides the sender name and icon shown on this message, or <see langword="null"/> when not needed.
+    /// </summary>
+    /// <remarks>
+    /// 對應 LINE 的 <c>sender</c> 欄位,有值才輸出。它只改「這一則」的顯示,官方帳號本身的名稱不變 ——
+    /// 適合多人客服或多品牌共用一個帳號的情境。
+    /// Maps to LINE's <c>sender</c> field and is written only when set. It changes the look of this one message
+    /// alone, not the official account's name — the case for it is several operators or several brands sharing
+    /// one account.
+    /// </remarks>
+    public LineMessageSender? Sender { get; set; }
+
+    /// <summary>
+    /// 送出前的本地檢查:快速回覆的按鈕數,以及各型別自己的上限(範本的動作數、圖片地圖的區域數)。
+    /// The local check before sending: the quick reply's button count, plus each type's own limits (a template's
+    /// action count, an imagemap's area count).
+    /// </summary>
+    /// <returns>
+    /// 全部通過時為成功;否則為對應的 <c>line.validation.*</c> 失敗。
+    /// Success when everything passes, otherwise the matching <c>line.validation.*</c> failure.
+    /// </returns>
+    /// <remarks>
+    /// 用戶端在每一次送出之前都會逐則呼叫這個方法,失敗時<b>一個請求都不送</b>。超量的內容在 LINE 那頭是
+    /// 整則訊息退回,而回來的 400 只說「請求內容有 1 個錯誤」,不會說是哪一則、哪一個欄位。
+    /// The client calls this on every message before every send, and on failure <b>nothing is sent</b>. Oversized
+    /// content has LINE reject the whole message, and the 400 that comes back says only that the body has one
+    /// error — not which message, and not which field.
+    /// </remarks>
+    public virtual Result Validate() =>
+        QuickReply is { } quickReply ? quickReply.Validate() : Result.Success();
+
+    /// <summary>
     /// 把整則訊息寫成一個 JSON 物件。
     /// Writes the whole message as one JSON object.
     /// </summary>
@@ -77,12 +110,18 @@ public abstract class LineMessage
             quickReply.WriteTo(writer);
         }
 
+        if (Sender is { IsEmpty: false } sender)
+        {
+            writer.WritePropertyName("sender");
+            sender.WriteTo(writer);
+        }
+
         writer.WriteEndObject();
     }
 
     /// <summary>
-    /// 寫出這個型別專屬的欄位(不含 <c>type</c> 與 <c>quickReply</c>)。
-    /// Writes the fields specific to this type, excluding <c>type</c> and <c>quickReply</c>.
+    /// 寫出這個型別專屬的欄位(不含 <c>type</c>、<c>quickReply</c> 與 <c>sender</c>)。
+    /// Writes the fields specific to this type, excluding <c>type</c>, <c>quickReply</c> and <c>sender</c>.
     /// </summary>
     /// <param name="writer">JSON 寫入器。The JSON writer.</param>
     internal abstract void WriteBody(Utf8JsonWriter writer);
