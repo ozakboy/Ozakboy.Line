@@ -11,7 +11,7 @@
 
     <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
-    <PackageReleaseNotes>0.1.0: first release. A set of MCP tools over Ozakboy.Line for an outside AI to operate a LINE official account: bot info and quota, push, multicast and broadcast, an outbox, rich menus and their aliases, auto reply rules, and message templates. Sending tools default to Review mode, where nothing leaves the building: the payload goes into an outbox as PendingReview and the approve-and-send API is available to the host only, never as a tool. A daily cap limits how many items the AI can queue. UseLineMcpKeyGate() guards the whole /mcp/line subtree with a key carried in the path, compared in fixed time, answering a clean JSON 404 on any failure. WithLineTools() adds the same tools to an MCP server a host already has. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.2.0: version bump alongside the core package. The line_send_push, line_send_multicast and line_send_broadcast tools accept template and imagemap message JSON exactly as they accept every other message type: the array is queued and sent verbatim, and the outbox summary names the type. No tool was added or renamed, the review queue and daily cap are unchanged, and the key gate still answers 404 on any failure. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 

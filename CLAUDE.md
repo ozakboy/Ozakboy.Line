@@ -40,12 +40,20 @@ Ozakboy.Line/
     Line{Endpoints,ErrorCodes,ErrorDataKeys,MessagingLimits,Json,Http,ApiErrorMapper}.cs
     LineUserProfile.cs  LineHttpClientNames.cs  LineServiceCollectionExtensions.cs
     Login/        LineLoginOptions / LineLoginClient / LineIdTokenValidator / LinePkce / 回應模型
-    Messaging/    LineMessagingOptions / LineMessagingClient / 回應模型 / LinePushOptions / LineQuickReply(+Item)
-      Messages/   LineMessage 與七種具體訊息 + RawMessage + 序列化器與轉換器
+    Messaging/    LineMessagingOptions / LineMessagingClient(+ .Chat / .Narrowcast / .Insight 三個 partial)
+                  回應模型 / LinePushOptions / LineQuickReply(+Item)/ LineMessageSender / LineUserIdsPage
+                  LineGroupSummary / LineMessageValidationTarget
+      Messages/   LineMessage 與九種具體訊息(含 TemplateMessage、ImagemapMessage)+ RawMessage + 序列化器與轉換器
+        Template/ LineTemplate / Buttons / Confirm / Carousel(+Column)/ ImageCarousel(+Column)
+        Imagemap/ LineImagemapAction / ImagemapUri / ImagemapMessage / LineImagemapArea / LineImagemapVideo
       Actions/    LineAction 與九種具體動作(Uri / Message / Postback / DatetimePicker / Camera / CameraRoll /
                 Location / Clipboard / RichMenuSwitch)+ RawAction + 轉換器
       RichMenu/   LineRichMenu / Size / Bounds / Area / Info / Alias / ReplaceOptions
-    Webhook/      LineWebhookSignature / LineWebhookParser / LineWebhookContentProvider / 事件模型 / 型別常數
+      Narrowcast/ LineNarrowcastOptions / LineNarrowcastRecipient(Audience / Redelivery / And / Or / Not)/ Progress
+      Audience/   LineAudienceGroup / Created / Detail / Job / Page
+      Insight/    LineMessageDeliveryInsight / LineFollowersInsight / LineDemographicInsight(+ 五種百分比項目)
+    Webhook/      LineWebhookSignature / LineWebhookParser / LineWebhookContentProvider / LineWebhookVideoPlayComplete
+                  事件模型 / 型別常數
     Templates/    LineMessageTemplate / LineTemplateVariables / LineTemplateRenderer / store 與 DI
     AutoReply/    LineAutoReplyRule / Matcher / Service / Outcome / store 與 DI
     Storage/      JsonFileStore(internal,原子寫入 + 讀寫鎖)/ LineStoreIds
@@ -59,7 +67,7 @@ Ozakboy.Line/
     LineMcp{KeyGate,WellKnownNotFound}Middleware.cs
     Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / ILineMcpOutboxService / Service
     Tools/        Line{Info,Send,Outbox,RichMenu,AutoReply,Template}Tools
-  tests/Ozakboy.Line.Tests/             核心測試(離線)
+  tests/Ozakboy.Line.Tests/             核心測試(離線;Samples/*.json 是依官方文件整理的回應樣本,source 欄位註明端點)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
   tests/Ozakboy.Line.Mcp.Tests/         MCP 測試(工具直接 new + TestHost 驗金鑰閘,離線)
 ```
@@ -96,6 +104,11 @@ Ozakboy.Line/
 - **webhook 端點的狀態碼是契約**:驗簽失敗 401、解析失敗 400、其餘一律 200(含處理常式擲例外與零事件的驗證請求)。
 - `LineMessage` / `LineAction` 只允許本組件內繼承(改寫輸出的成員是 internal);對外的擴充點是 `RawMessage` / `RawAction` 與 `*RawJsonAsync`。
 - **快速回覆上限 13 顆按鈕**(`LineMessagingLimits.MaxQuickReplyItems`),`0` 或 `>13` 一律在送出前失敗;**超量時 LINE 是整則訊息退回**,不是只顯示前 13 個。零顆也算失敗,不當成「沒設定」。
+- **範本與圖片地圖的本地上限是契約**(0.2.0):buttons 動作 1~4、confirm **恰好** 2、carousel 與 image_carousel 欄數 1~10、carousel 每欄動作 1~3 **且各欄一致**、imagemap 區域 1~50、`baseSize.width` 固定 1040(建構子只收高度)。全部走 `LineMessage.Validate()`,用戶端每次送出前逐則呼叫,違反時**一個請求都不送**;錯誤代碼 `line.validation.invalid_template` / `line.validation.invalid_imagemap`。
+- **`LineMessage.Sender` 有值才輸出、兩欄皆空不輸出;`RawMessage` 忽略 `Sender` 與 `QuickReply`**(呼叫端的物件可能已經有那兩個欄位,再寫一次是重複欄位)。
+- **端點參數的本地上限是契約**(0.2.0):載入動畫秒數 5~60 且為 5 的倍數(`line.validation.invalid_loading_seconds`)、好友清單 `limit` 1~1000 與受眾清單 `page ≥ 1` / `size` 1~40(`line.validation.invalid_page_size`)、受眾成員單次 ≤ 10,000(建立可為 0、加成員至少 1;`line.validation.too_many_audience_members`)。違反時不送出。
+- **`NarrowcastAsync` 回的是 `X-Line-Request-Id` 標頭的值**,沒有那個標頭是 `line.api.invalid_response` 失敗;`RetryKey` 語意與推播完全相同。**`ValidateMessagesAsync` 先跑本地檢查再打 LINE**,本地失敗時不送。
+- **`LineMessageValidationTarget` 只決定路徑最後一段**(`push` / `multicast` / `broadcast` / `reply` / `narrowcast`),不改請求內容。
 - **`ReplaceRichMenuAsync` 的失敗處理是契約,而且刻意不對稱**:圖片上傳失敗會**刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟,而且佔額度);刪舊選單失敗**只記錄、整體仍回成功**(新選單已上線,回失敗只會讓呼叫端重做而多出一個選單)。設預設失敗則回失敗但**不**刪新選單。
 - **自動回覆的挑選順序是契約**:先 `Priority` 升冪,同分再依明確程度 `Exact` > `StartsWith` > `Contains` > `Regex`。`Follow` 與 `Fallback` **不參與一般比對**,由 `FindFirst` 另外取;`Fallback` 只在其他規則都沒命中時才用,不參與優先序比較。
 - **正規表示式比對逾時(100 ms)或表示式無效一律視為「不符」**,不擲出例外 —— 一條寫壞的規則不得讓 webhook 回非 2xx,那會讓 LINE 重送整批。
@@ -115,6 +128,12 @@ Ozakboy.Line/
 - **`JsonElement` 的生命週期綁在 `JsonDocument` 上**,任何要留著的元素(`FlexMessage.Contents`、`RawMessage.Contents`、`LineWebhookEvent.Raw`)一律 `Clone()` 後保存,否則是一碰就擲例外的空殼。
 - **LINE 的 `richmenus` 欄位是全小寫**(不是 `richMenus`),靠 camelCase 命名原則會得到永遠空的清單而且沒有錯誤 —— 所有模型都標了明確的 `[JsonPropertyName]`,不靠命名原則。
 - **webhook 的 `timestamp` 是 Unix 毫秒**,當成秒解會落在 1970 年附近。
+- **成員清單的欄位名不一致**:好友清單回 `userIds`,群組 / 聊天室成員清單回 `memberIds`;共用一個反序列化模型會有一邊永遠是空的而且沒有錯誤。對外統一成 `LineUserIdsPage`,內部是兩個 response DTO。
+- **narrowcast 的請求識別碼在回應標頭 `X-Line-Request-Id`,不在內容裡**;`LineHttp.SendForStringAsync` 只給內容,所以 `NarrowcastAsync` 與 `GetMessageContentAsync` 一樣直接走 `_http.SendAsync`,自己釋放請求、自己呼叫 `HttpErrorMapper.FromResponseAsync`。
+- **受眾加成員是 PUT 到同一個 `/audienceGroup/upload` 端點**,不是 POST 到 `/{id}/members`;成員是 `{"id": …}` 物件陣列而不是裸字串(與 multicast 的 `to` 不同);`audienceGroupId` 是**數字**。`markAsRead` 的內容是巢狀的 `chat.userId`,不是平的 `userId`。
+- **imagemap 動作的位址欄位是 `linkUri`**,不是快速回覆動作的 `uri`;範本外層 `type` 固定 `template`,真正的型別在 `template.type`。這兩組動作型別因此各自建模(`LineImagemapAction` 不是 `LineAction`),不重用。
+- **洞察端點的日期一律以 `CultureInfo.InvariantCulture` 寫成 `yyyyMMdd`**,預設文化在某些機器會寫成民國年或加分隔符號。
+- **`git checkout -- .` 會把「已修改但未暫存」的追蹤檔案一併還原**,在分批 commit 時只能用來還原「明確點名的檔案」;要拆 commit 請暫存副本再改,不要靠 checkout 回復。
 - **`AddOzakboyHttpPipeline` 的設定委派在註冊當下就執行完畢**,拿不到 `IOptions`。要把 channel secret 登記進遮罩器,只能在 `AddLineLogin` / `AddLineMessaging` 裡先自己跑一次 `configure` 取值(見 `LineServiceCollectionExtensions` 的 `probe`)。祕密長度不足 `SecretMasker.MinimumKnownSecretLength`(8)時不登記,否則 `HttpPipelineOptions.Validate()` 會讓註冊直接擲例外。
 - **認證處理器的 nonce 必須在呼叫 `base.BuildChallengeUrl` 之前放進 `properties.Items`**,因為基底類別在那個方法裡就把 properties 序列化成 state 了;之後再放的東西不會出門。
 - **遠端認證失敗的預設行為是把例外往外丟**,測試(與正式站)要設 `Events.OnRemoteFailure` 才看得到狀態碼。

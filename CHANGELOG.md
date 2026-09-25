@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-25
+
+Two more message types, the rest of the Messaging API's chat, audience and insight surface, and a local check for
+every new cap LINE enforces. No existing error code, category or method signature changed.
+
+再加兩種訊息型別、Messaging API 剩下的聊天、受眾與洞察端點,以及每一條 LINE 新上限的本地檢查。
+既有的錯誤代碼、分類與方法簽章都沒有變。
+
+### Added
+
+- **`Ozakboy.Line` — template and imagemap messages.** `TemplateMessage` wraps one of `ButtonsTemplate`,
+  `ConfirmTemplate`, `CarouselTemplate` (with `CarouselColumn`) or `ImageCarouselTemplate` (with
+  `ImageCarouselColumn`); `ImagemapMessage` carries `ImagemapUriAction` and `ImagemapMessageAction` areas and an
+  optional `LineImagemapVideo`, with the base width fixed at 1040 so the constructor takes the height alone. Their
+  caps — 4 buttons, exactly 2 confirm actions, 10 columns of at most 3 actions that must match across columns,
+  50 imagemap areas — are checked on the caller's machine and a call that breaks one sends nothing. Every
+  `LineMessage` now has a public `Validate()`, which the client runs per message before every send, and a
+  `Sender` (`LineMessageSender`: `name`, `iconUrl`) written only when set; `RawMessage` ignores both, as it does
+  the quick reply. `VideoMessage` gained `TrackingId`, and `LineWebhookEvent.VideoPlayComplete.TrackingId` reads
+  it back from a `videoPlayComplete` event.
+  **`Ozakboy.Line` — 範本與圖片地圖訊息。** `TemplateMessage` 包 `ButtonsTemplate`、`ConfirmTemplate`、
+  `CarouselTemplate`(配 `CarouselColumn`)或 `ImageCarouselTemplate`(配 `ImageCarouselColumn`)其中之一;
+  `ImagemapMessage` 帶 `ImagemapUriAction` 與 `ImagemapMessageAction` 兩種區域與可選的 `LineImagemapVideo`,
+  底圖寬度固定 1040,建構子只收高度。上限 —— 4 個按鈕、確認範本恰好 2 個動作、10 欄且每欄最多 3 個動作
+  並各欄一致、50 塊圖片地圖區域 —— 在呼叫端的機器上檢查,違反的呼叫一個請求都不送。每個 `LineMessage`
+  多了公開的 `Validate()`(用戶端每次送出前逐則呼叫)與有值才輸出的 `Sender`(`LineMessageSender`:
+  `name`、`iconUrl`);`RawMessage` 與快速回覆同理,兩者都忽略。`VideoMessage` 多了 `TrackingId`,
+  `LineWebhookEvent.VideoPlayComplete.TrackingId` 從 `videoPlayComplete` 事件把它讀回來。
+
+- **`Ozakboy.Line` — followers, groups and rooms.** `GetFollowerIdsAsync` pages the follower list with `start`
+  and `limit`; groups get `GetGroupSummaryAsync`, `GetGroupMemberCountAsync`, `GetGroupMemberIdsAsync`,
+  `LeaveGroupAsync` and `GetGroupMemberProfileAsync`, rooms the same minus the summary. Both member lists and
+  the follower list come back as `LineUserIdsPage`, although LINE names the field `memberIds` in one and
+  `userIds` in the other. `StartLoadingAnimationAsync` shows the typing animation for 5 to 60 seconds in steps of
+  5, checked locally; `MarkAsReadAsync` writes the nested `chat.userId` LINE asks for.
+  **`Ozakboy.Line` — 好友、群組與聊天室。** `GetFollowerIdsAsync` 以 `start` 與 `limit` 分頁列好友;群組有
+  `GetGroupSummaryAsync`、`GetGroupMemberCountAsync`、`GetGroupMemberIdsAsync`、`LeaveGroupAsync` 與
+  `GetGroupMemberProfileAsync`,聊天室除了摘要以外相同。兩種成員清單與好友清單都以 `LineUserIdsPage` 回來,
+  雖然 LINE 一邊叫 `memberIds`、一邊叫 `userIds`。`StartLoadingAnimationAsync` 顯示 5 到 60 秒、5 的倍數的
+  輸入中動畫(本地檢查);`MarkAsReadAsync` 寫出 LINE 要的巢狀 `chat.userId`。
+
+- **`Ozakboy.Line` — message validation.** `ValidateMessagesAsync(LineMessageValidationTarget, messages)` and
+  its raw-JSON twin post to LINE's `validate/{push|multicast|broadcast|reply|narrowcast}` endpoints, which check
+  the message objects without sending anything or using quota. Local caps are checked first, and LINE's 400 comes
+  back through `LineApiErrorMapper` with the offending field in `lineDetails`.
+  **`Ozakboy.Line` — 訊息驗證。** `ValidateMessagesAsync(LineMessageValidationTarget, messages)` 與它的
+  原始 JSON 版本打 LINE 的 `validate/{push|multicast|broadcast|reply|narrowcast}` 端點,只驗訊息物件、
+  不送出、不計額度。本地上限先擋,LINE 的 400 經 `LineApiErrorMapper` 回來,出錯的欄位在 `lineDetails`。
+
+- **`Ozakboy.Line` — narrowcast and audiences.** `NarrowcastAsync` sends to a subset of friends and returns the
+  request id from the `X-Line-Request-Id` header; `LineNarrowcastOptions` takes the recipient and demographic
+  trees as `JsonElement`, with `LineNarrowcastRecipient.Audience` / `Redelivery` / `And` / `Or` / `Not` building
+  the common recipient shapes, plus the limit, the notification switch and a retry key with the same meaning as a
+  push's. `GetNarrowcastProgressAsync` reads the phase and counts. Upload audiences get
+  `CreateUploadAudienceGroupAsync`, `AddAudienceGroupMembersAsync` (a PUT, up to 10 000 users per call, checked
+  locally), `GetAudienceGroupAsync`, `GetAudienceGroupListAsync` (page from 1, size 1 to 40) and
+  `DeleteAudienceGroupAsync`.
+  **`Ozakboy.Line` — 分眾推播與受眾。** `NarrowcastAsync` 送給一部分好友,回 `X-Line-Request-Id` 標頭裡的
+  請求識別碼;`LineNarrowcastOptions` 以 `JsonElement` 收收件對象與屬性篩選的運算樹,
+  `LineNarrowcastRecipient.Audience` / `Redelivery` / `And` / `Or` / `Not` 組常用的收件對象,另有人數上限、
+  通知開關與語意同推播的重試鍵。`GetNarrowcastProgressAsync` 讀階段與人數。上傳型受眾有
+  `CreateUploadAudienceGroupAsync`、`AddAudienceGroupMembersAsync`(PUT,單次最多 10,000 人,本地檢查)、
+  `GetAudienceGroupAsync`、`GetAudienceGroupListAsync`(頁碼從 1 起、每頁 1 到 40)與
+  `DeleteAudienceGroupAsync`。
+
+- **`Ozakboy.Line` — insights.** `GetMessageDeliveryInsightAsync(date)`, `GetFollowersInsightAsync(date)` and
+  `GetDemographicInsightAsync()` read the message delivery counts, the follower figures and the friend
+  demographics. Dates are written as `yyyyMMdd` in the invariant culture, and a status other than `ready` leaves
+  every number `null` rather than zero.
+  **`Ozakboy.Line` — 成效洞察。** `GetMessageDeliveryInsightAsync(date)`、`GetFollowersInsightAsync(date)` 與
+  `GetDemographicInsightAsync()` 讀訊息傳送數、好友數與好友屬性分布。日期以不變文化寫成 `yyyyMMdd`,
+  狀態不是 `ready` 時所有數字是 `null` 而不是 0。
+
+- **New error codes and caps.** `line.validation.invalid_template`, `line.validation.invalid_imagemap`,
+  `line.validation.invalid_loading_seconds`, `line.validation.invalid_page_size` and
+  `line.validation.too_many_audience_members`; `LineMessagingLimits` gained the matching constants. Existing codes
+  are untouched.
+  **新錯誤代碼與上限。** `line.validation.invalid_template`、`line.validation.invalid_imagemap`、
+  `line.validation.invalid_loading_seconds`、`line.validation.invalid_page_size` 與
+  `line.validation.too_many_audience_members`;`LineMessagingLimits` 加上對應的常數。既有代碼不動。
+
+- **`Ozakboy.Line.Mcp`.** `line_send_push`, `line_send_multicast` and `line_send_broadcast` were confirmed to
+  accept template and imagemap JSON in `messagesJson` verbatim, with tests; no tool was added or renamed.
+  **`Ozakboy.Line.Mcp`。** 確認 `line_send_push`、`line_send_multicast` 與 `line_send_broadcast` 的
+  `messagesJson` 對範本與圖片地圖 JSON 原樣收下,並補上測試;沒有新增或改名任何工具。
+
 ### Changed
 
 - **Documentation only; no code or behaviour change.** `CLAUDE.md`'s directory map now matches the tree: the
@@ -21,6 +107,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LineWebhookContentProvider` 與 `ILineMcpOutboxService`。`Ozakboy.Line.Mcp` csproj 裡關於 CA1848 與
   CA2007 的註解改寫成實況:兩條都不在 `NoWarn` —— 本套件完全沒有記錄,CA1848 根本不會觸發;
   每個 `await` 都接了 `.ConfigureAwait(false)`,CA2007 是被滿足而不是被壓下來。沒有放寬任何規則。
+
+### Notes
+
+- **The new caps are contracts, like the old ones.** They are checked before sending and a call that breaks one
+  sends nothing: LINE rejects the whole message and its 400 names no field, so a local failure that says how many
+  there were is the better one to get.
+  **新上限與舊上限一樣是契約。** 送出前檢查,違反的呼叫一個請求都不送:LINE 是整則退回而且 400 不指名欄位,
+  本地說得出實際數量的失敗才是比較好的那一個。
+
+- **A narrowcast is asynchronous.** A 2xx means LINE accepted it; `GetNarrowcastProgressAsync` says whether it
+  went out and to how many people.
+  **分眾推播是非同步的。** 2xx 只代表 LINE 收下了,有沒有送出、送給幾個人要看 `GetNarrowcastProgressAsync`。
 
 ## [0.1.0] - 2026-09-15
 
@@ -199,5 +297,6 @@ and webhook endpoint on top.
   自己實作等於維護一份會隨協定改版而落後的實作 —— 落後的症狀是連接器連得上但工具清單是空的。
   核心與整合兩個套件不受影響。
 
-[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ozakboy/Ozakboy.Line/releases/tag/v0.1.0

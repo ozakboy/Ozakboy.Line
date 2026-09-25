@@ -168,6 +168,41 @@ There are ten actions: `MessageAction`, `PostbackAction`, `UriAction`, `Datetime
 
 ---
 
+## Template and imagemap messages
+
+Two more of LINE's message types, modelled so that the field names LINE is picky about are the compiler's business rather than yours. A template is one of four fixed layouts; an imagemap is one large image with tappable areas drawn on it.
+
+```csharp
+await line.PushAsync(userId, [
+    new TemplateMessage("Which district?", new ButtonsTemplate("Pick one")
+    {
+        Title = "Districts",
+        ThumbnailImageUrl = "https://example.com/districts.jpg",
+        Actions = { new MessageAction("Taipei") { Label = "Taipei" }, new PostbackAction("area=ntpc") { Label = "New Taipei" } },
+    }),
+    new TemplateMessage("Confirm?", new ConfirmTemplate("Subscribe to alerts?", new MessageAction("Yes"), new MessageAction("No"))),
+]);
+
+await line.PushAsync(userId, [
+    new ImagemapMessage("https://example.com/map", "Map", baseHeight: 1040)
+    {
+        Actions =
+        {
+            new ImagemapUriAction("https://example.com/north", new LineImagemapArea(0, 0, 1040, 520)),
+            new ImagemapMessageAction("South", new LineImagemapArea(0, 520, 1040, 520)),
+        },
+    },
+]);
+```
+
+`CarouselTemplate` takes up to ten `CarouselColumn`s, `ImageCarouselTemplate` up to ten `ImageCarouselColumn`s. **The caps are checked before sending**: four buttons, exactly two confirm actions, ten columns of at most three actions that must match across columns, fifty imagemap areas. A call that breaks one fails on your machine with `line.validation.invalid_template` or `line.validation.invalid_imagemap`, naming the count — LINE would reject the whole message with a 400 that names nothing.
+
+Two things about imagemaps worth knowing: LINE fetches `{baseUrl}/{width}` rather than `baseUrl` itself, so several sizes have to sit under that address and it must not end in a slash; and the base width is always 1040, which is why the constructor takes only the height. The action's address field is `linkUri`, not the `uri` of a quick reply action — the two action sets are different types here for that reason.
+
+Every message can also carry a `Sender` (`name`, `iconUrl`) that overrides the account's name and icon for that one message, and `VideoMessage.TrackingId` makes LINE send a `videoPlayComplete` event, readable as `evt.VideoPlayComplete.TrackingId`, once the user has watched it through.
+
+---
+
 ## Message templates
 
 A reusable set of LINE messages that can carry variables. What is stored is **the JSON of a message array** rather than a piece of plain text, so images, Flex layouts and quick replies all fit into a template — and changing the wording never means changing code.
@@ -233,6 +268,72 @@ Rules are ordered by `Priority` first, smallest going first, and within a tie by
 A reply can use `{{text}}`, the message the user sent, and `{{displayName}}`, their display name, which is looked up only when a rule actually uses it. Regular expressions are matched under a 100-millisecond cap, and a timeout or an invalid expression counts as no match rather than throwing: one badly written rule should not turn the whole webhook into a 500, which would have LINE redeliver the entire batch.
 
 Auto reply always uses a **reply token** rather than a push: a reply costs no quota, and auto reply is the heaviest consumer of quota there is.
+
+---
+
+## Groups and rooms
+
+```csharp
+var summary = await line.GetGroupSummaryAsync(groupId);          // name and picture
+var count = await line.GetGroupMemberCountAsync(groupId);        // excluding the account itself
+var who = await line.GetGroupMemberProfileAsync(groupId, userId); // no friendship required
+
+string? next = null;
+do
+{
+    var page = (await line.GetGroupMemberIdsAsync(groupId, next)).GetValueOrThrow();
+    // …page.UserIds
+    next = page.Next;
+}
+while (next is not null);
+
+await line.LeaveGroupAsync(groupId);
+```
+
+Rooms have the same surface minus the summary — a room has neither a name nor a picture. The follower list, `GetFollowerIdsAsync(start, limit)`, pages the same way, and all three return `LineUserIdsPage` even though LINE names the field `memberIds` in one and `userIds` in the other. The follower and member-id lists are available only to verified or premium accounts; LINE answers 403 for the rest, which is a fact about the account rather than a defect.
+
+---
+
+## Narrowcast, audiences and insights
+
+A narrowcast sends to a subset of friends, chosen by an audience you uploaded or by demographics LINE infers. It is **asynchronous**: the call returns LINE's request id, and the progress endpoint says whether it went out and to how many people.
+
+```csharp
+var created = await line.CreateUploadAudienceGroupAsync("Taipei parents", userIds);   // up to 10 000 per call
+await line.AddAudienceGroupMembersAsync(created.GetValueOrThrow().AudienceGroupId, moreUserIds);
+
+var requestId = await line.NarrowcastAsync(
+    [new TextMessage("New sanction on record")],
+    new LineNarrowcastOptions
+    {
+        Recipient = LineNarrowcastRecipient.And(
+            LineNarrowcastRecipient.Audience(audienceGroupId),
+            LineNarrowcastRecipient.Not(LineNarrowcastRecipient.Redelivery(previousRequestId))),
+        MaxRecipients = 1000,
+        RetryKey = jobId,
+    });
+
+var progress = await line.GetNarrowcastProgressAsync(requestId.GetValueOrThrow());
+// progress.Phase: waiting → sending → succeeded | failed; SuccessCount, FailureCount, TargetCount
+```
+
+`Recipient` and `Demographic` are `JsonElement` trees rather than a full model — both are nestable `and` / `or` / `not` operators whose leaf types LINE keeps extending — and `LineNarrowcastRecipient` builds the common shapes. A freshly created audience is `IN_PROGRESS` and needs enough members (LINE currently asks for 100) to become `READY`; `GetAudienceGroupAsync`, `GetAudienceGroupListAsync` and `DeleteAudienceGroupAsync` round out the set.
+
+`ValidateMessagesAsync(LineMessageValidationTarget.Push, messages)` posts to LINE's validation endpoint, which checks the message objects without sending anything or using quota — useful before storing a template. Local caps are checked first, and LINE's 400 comes back with the offending field in `lineDetails`.
+
+The three insight endpoints read what happened: `GetMessageDeliveryInsightAsync(date)` per channel, `GetFollowersInsightAsync(date)` for followers, reaches and blocks, and `GetDemographicInsightAsync()` for gender, age, area, OS and subscription period. A status other than `ready` leaves every number `null` — not counted yet, or not available — rather than zero.
+
+---
+
+## Loading animation and read marks
+
+```csharp
+await line.StartLoadingAnimationAsync(userId, loadingSeconds: 20);   // 5 to 60, in steps of 5
+// …do the slow thing; the animation stops as soon as the account sends a message
+await line.MarkAsReadAsync(userId);
+```
+
+The animation shows only in one-to-one chats and only while the user has the chat open. Seconds outside 5–60 or not a multiple of 5 fail locally as `line.validation.invalid_loading_seconds`. `MarkAsReadAsync` matters only when the account's read mode (`LineBotInfo.MarkAsReadMode`) is `manual`.
 
 ---
 
@@ -338,8 +439,12 @@ The rule and template tools **skip the review queue**, because they send nothing
 | Account | `GetQuotaAsync` · `GetQuotaConsumptionAsync` · `GetBotInfoAsync` · `GetProfileAsync` · `GetMessageContentAsync` |
 | Rich menu | `CreateRichMenuAsync` · `UploadRichMenuImageAsync` · `GetRichMenuListAsync` · `GetRichMenuAsync` · `DeleteRichMenuAsync` · `SetDefaultRichMenuAsync` · `ClearDefaultRichMenuAsync` · `GetDefaultRichMenuIdAsync` · `LinkRichMenuToUserAsync` · `UnlinkRichMenuFromUserAsync` · `GetRichMenuIdOfUserAsync` · `ValidateRichMenuAsync` |
 | Replacement and aliases | `ReplaceRichMenuAsync` · `CreateRichMenuAliasAsync` · `UpdateRichMenuAliasAsync` · `DeleteRichMenuAliasAsync` · `GetRichMenuAliasAsync` · `GetRichMenuAliasListAsync` · `LinkRichMenuToUsersAsync` · `UnlinkRichMenuFromUsersAsync` |
+| Followers, groups and rooms | `GetFollowerIdsAsync` · `GetGroupSummaryAsync` · `GetGroupMemberCountAsync` · `GetGroupMemberIdsAsync` · `LeaveGroupAsync` · `GetGroupMemberProfileAsync` · `GetRoomMemberCountAsync` · `GetRoomMemberIdsAsync` · `LeaveRoomAsync` · `GetRoomMemberProfileAsync` |
+| Chat and validation | `StartLoadingAnimationAsync` · `MarkAsReadAsync` · `ValidateMessagesAsync` · `ValidateMessagesRawJsonAsync` |
+| Narrowcast and audiences | `NarrowcastAsync` · `GetNarrowcastProgressAsync` · `CreateUploadAudienceGroupAsync` · `AddAudienceGroupMembersAsync` · `GetAudienceGroupAsync` · `GetAudienceGroupListAsync` · `DeleteAudienceGroupAsync` |
+| Insights | `GetMessageDeliveryInsightAsync` · `GetFollowersInsightAsync` · `GetDemographicInsightAsync` |
 
-Message types: `TextMessage`, `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, and `RawMessage` for anything not modelled yet. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
+Message types: `TextMessage`, `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
 
 `ReplaceRichMenuAsync` runs create, upload, set-as-default, repoint-the-alias and delete-the-old-menu as one call. Its failure handling is asymmetric on purpose: **a failed image upload deletes the menu just created**, since a menu without an image is worse than no menu, while **a failed deletion of the old menu is only logged and the call still succeeds**, since the new menu is already live and reporting a failure would have the caller redo it and end up with one menu more.
 
@@ -388,7 +493,7 @@ Outbox statuses: `PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected`
 
 ### Error codes
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
 
 These are a public contract and do not change once published.
 

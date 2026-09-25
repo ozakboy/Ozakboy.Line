@@ -168,6 +168,41 @@ await line.PushAsync(userId, [
 
 ---
 
+## 範本與圖片地圖訊息
+
+再補兩種 LINE 的訊息型別,建模的目的是讓 LINE 挑剔的欄位名變成編譯器的事。範本是四種固定版面之一;圖片地圖是一張大圖,上面劃出可點擊的區域。
+
+```csharp
+await line.PushAsync(userId, [
+    new TemplateMessage("要看哪一區?", new ButtonsTemplate("選一個")
+    {
+        Title = "地區",
+        ThumbnailImageUrl = "https://example.com/districts.jpg",
+        Actions = { new MessageAction("台北市") { Label = "台北市" }, new PostbackAction("area=ntpc") { Label = "新北市" } },
+    }),
+    new TemplateMessage("確認?", new ConfirmTemplate("要訂閱通知嗎?", new MessageAction("要"), new MessageAction("不要"))),
+]);
+
+await line.PushAsync(userId, [
+    new ImagemapMessage("https://example.com/map", "地圖", baseHeight: 1040)
+    {
+        Actions =
+        {
+            new ImagemapUriAction("https://example.com/north", new LineImagemapArea(0, 0, 1040, 520)),
+            new ImagemapMessageAction("南區", new LineImagemapArea(0, 520, 1040, 520)),
+        },
+    },
+]);
+```
+
+`CarouselTemplate` 收最多十個 `CarouselColumn`,`ImageCarouselTemplate` 收最多十個 `ImageCarouselColumn`。**上限在送出前檢查**:四個按鈕、確認範本恰好兩個動作、十欄且每欄最多三個動作並各欄一致、五十塊圖片地圖區域。違反的呼叫失敗在自己的機器上,代碼是 `line.validation.invalid_template` 或 `line.validation.invalid_imagemap`,訊息說得出實際數量 —— LINE 那頭是整則退回,而 400 什麼都不說。
+
+圖片地圖有兩件事要先知道:LINE 抓的是 `{baseUrl}/{width}` 而不是 `baseUrl` 本身,所以那個位址底下要放多個尺寸的檔案、結尾不能有斜線;底圖寬度固定 1040,所以建構子只收高度。動作的位址欄位是 `linkUri`,不是快速回覆動作的 `uri` —— 這兩組動作在這裡是不同的型別,原因就在這。
+
+每則訊息還可以帶 `Sender`(`name`、`iconUrl`),只改那一則顯示的名稱與頭像;`VideoMessage.TrackingId` 讓 LINE 在使用者看完影片時送 `videoPlayComplete` 事件,由 `evt.VideoPlayComplete.TrackingId` 讀回。
+
+---
+
 ## 訊息範本
 
 一組可重複使用、可帶變數的 LINE 訊息。存的是**訊息陣列的 JSON** 而不是一段純文字,所以圖片、Flex 版面、快速回覆都能存進範本;改文案也不必動程式碼。
@@ -233,6 +268,72 @@ app.MapLineWebhook("/line/webhook", o => o.AutoReply = true, async (evt, context
 回覆內容可用 `{{text}}`(使用者原訊息)與 `{{displayName}}`(顯示名稱,只有規則真的用到時才會去查個人檔案)。正規表示式的比對有 100 毫秒上限,逾時或表示式無效一律視為「不符」而不是擲出例外 —— 一條寫壞的規則不該讓整個 webhook 回 500,那會讓 LINE 重送整批事件。
 
 自動回覆一律走 **reply token** 而不是推播:回覆不計額度,而自動回覆是所有功能裡最會消耗額度的那一個。
+
+---
+
+## 群組與聊天室
+
+```csharp
+var summary = await line.GetGroupSummaryAsync(groupId);          // 名稱與圖片
+var count = await line.GetGroupMemberCountAsync(groupId);        // 不含官方帳號自己
+var who = await line.GetGroupMemberProfileAsync(groupId, userId); // 不要求是好友
+
+string? next = null;
+do
+{
+    var page = (await line.GetGroupMemberIdsAsync(groupId, next)).GetValueOrThrow();
+    // …page.UserIds
+    next = page.Next;
+}
+while (next is not null);
+
+await line.LeaveGroupAsync(groupId);
+```
+
+聊天室有同一組方法,只少了摘要 —— 聊天室沒有名稱也沒有圖片。好友清單 `GetFollowerIdsAsync(start, limit)` 的分頁方式相同,三者都回 `LineUserIdsPage`,雖然 LINE 一邊叫 `memberIds`、一邊叫 `userIds`。好友清單與成員清單只開放給已認證或進階帳號,一般帳號 LINE 回 403 —— 那是帳號等級的事實,不是程式錯誤。
+
+---
+
+## 分眾推播與成效
+
+分眾推播送給一部分好友,對象由你上傳的受眾或 LINE 推估的屬性決定。它是**非同步**的:呼叫回的是 LINE 的請求識別碼,有沒有送出、送給幾個人要看進度端點。
+
+```csharp
+var created = await line.CreateUploadAudienceGroupAsync("台北家長", userIds);   // 單次最多 10,000 人
+await line.AddAudienceGroupMembersAsync(created.GetValueOrThrow().AudienceGroupId, moreUserIds);
+
+var requestId = await line.NarrowcastAsync(
+    [new TextMessage("有新的裁罰紀錄")],
+    new LineNarrowcastOptions
+    {
+        Recipient = LineNarrowcastRecipient.And(
+            LineNarrowcastRecipient.Audience(audienceGroupId),
+            LineNarrowcastRecipient.Not(LineNarrowcastRecipient.Redelivery(previousRequestId))),
+        MaxRecipients = 1000,
+        RetryKey = jobId,
+    });
+
+var progress = await line.GetNarrowcastProgressAsync(requestId.GetValueOrThrow());
+// progress.Phase:waiting → sending → succeeded | failed;SuccessCount、FailureCount、TargetCount
+```
+
+`Recipient` 與 `Demographic` 是 `JsonElement` 運算樹而不是完整模型 —— 兩者都是可巢狀的 `and` / `or` / `not`,而 LINE 還在為它們增加葉節點型別 —— 常用的形狀由 `LineNarrowcastRecipient` 組。剛建立的受眾是 `IN_PROGRESS`,要有足夠成員(LINE 目前要求 100 人)才會變 `READY`;`GetAudienceGroupAsync`、`GetAudienceGroupListAsync` 與 `DeleteAudienceGroupAsync` 補齊這一組。
+
+`ValidateMessagesAsync(LineMessageValidationTarget.Push, messages)` 打 LINE 的驗證端點,只驗訊息物件、不送出、不計額度 —— 存範本之前用得上。本地上限先擋,LINE 的 400 回來時出錯的欄位在 `lineDetails`。
+
+三個洞察端點看發生了什麼:`GetMessageDeliveryInsightAsync(date)` 看各管道的傳送數,`GetFollowersInsightAsync(date)` 看好友、可觸及與封鎖數,`GetDemographicInsightAsync()` 看性別、年齡、地區、作業系統與加好友時間。狀態不是 `ready` 時所有數字是 `null` —— 還沒統計或查不到 —— 而不是 0。
+
+---
+
+## 載入動畫與已讀
+
+```csharp
+await line.StartLoadingAnimationAsync(userId, loadingSeconds: 20);   // 5 到 60,5 的倍數
+// …做慢的事;官方帳號一送出訊息動畫就停
+await line.MarkAsReadAsync(userId);
+```
+
+動畫只在一對一聊天、而且使用者正開著那個聊天室時才看得到。秒數不在 5–60 或不是 5 的倍數,在本地就以 `line.validation.invalid_loading_seconds` 失敗。`MarkAsReadAsync` 只在帳號的已讀模式(`LineBotInfo.MarkAsReadMode`)是 `manual` 時有意義。
 
 ---
 
@@ -338,8 +439,12 @@ builder.Services.AddMcpServer()
 | 帳號 | `GetQuotaAsync` · `GetQuotaConsumptionAsync` · `GetBotInfoAsync` · `GetProfileAsync` · `GetMessageContentAsync` |
 | 圖文選單 | `CreateRichMenuAsync` · `UploadRichMenuImageAsync` · `GetRichMenuListAsync` · `GetRichMenuAsync` · `DeleteRichMenuAsync` · `SetDefaultRichMenuAsync` · `ClearDefaultRichMenuAsync` · `GetDefaultRichMenuIdAsync` · `LinkRichMenuToUserAsync` · `UnlinkRichMenuFromUserAsync` · `GetRichMenuIdOfUserAsync` · `ValidateRichMenuAsync` |
 | 選單替換與別名 | `ReplaceRichMenuAsync` · `CreateRichMenuAliasAsync` · `UpdateRichMenuAliasAsync` · `DeleteRichMenuAliasAsync` · `GetRichMenuAliasAsync` · `GetRichMenuAliasListAsync` · `LinkRichMenuToUsersAsync` · `UnlinkRichMenuFromUsersAsync` |
+| 好友、群組與聊天室 | `GetFollowerIdsAsync` · `GetGroupSummaryAsync` · `GetGroupMemberCountAsync` · `GetGroupMemberIdsAsync` · `LeaveGroupAsync` · `GetGroupMemberProfileAsync` · `GetRoomMemberCountAsync` · `GetRoomMemberIdsAsync` · `LeaveRoomAsync` · `GetRoomMemberProfileAsync` |
+| 聊天與驗證 | `StartLoadingAnimationAsync` · `MarkAsReadAsync` · `ValidateMessagesAsync` · `ValidateMessagesRawJsonAsync` |
+| 分眾推播與受眾 | `NarrowcastAsync` · `GetNarrowcastProgressAsync` · `CreateUploadAudienceGroupAsync` · `AddAudienceGroupMembersAsync` · `GetAudienceGroupAsync` · `GetAudienceGroupListAsync` · `DeleteAudienceGroupAsync` |
+| 成效洞察 | `GetMessageDeliveryInsightAsync` · `GetFollowersInsightAsync` · `GetDemographicInsightAsync` |
 
-訊息型別:`TextMessage`、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`,以及給尚未建模的東西用的 `RawMessage`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
+訊息型別:`TextMessage`、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
 
 `ReplaceRichMenuAsync` 把「建立 → 上傳圖片 → 設預設 → 指向別名 → 刪舊選單」串成一次呼叫。失敗處理刻意不對稱:**圖片上傳失敗會刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟),但**刪舊選單失敗只記錄、整體仍算成功**(新選單已經上線,回報失敗只會讓呼叫端重做而多出一個選單)。
 
@@ -388,7 +493,7 @@ builder.Services.AddMcpServer()
 
 ### 錯誤代碼
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
 
 這些字串是公開契約,發佈後不再更動。
 
