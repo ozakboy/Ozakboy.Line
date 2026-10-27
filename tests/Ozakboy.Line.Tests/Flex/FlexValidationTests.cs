@@ -377,6 +377,49 @@ public sealed class FlexValidationTests
     }
 
     [TestMethod]
+    public void ReadmeRestaurantCard_Validates()
+    {
+        // README 的餐廳卡片範例:文件上的程式碼必須真的能編譯、能過驗證。
+        // The README's restaurant card: the code in the documentation must compile and pass validation.
+        var card = new FlexBubble
+        {
+            Size = FlexBubbleSize.Mega,
+            Hero = new FlexImage("https://example.com/ramen.jpg")
+            {
+                Size = FlexSize.Full,
+                AspectRatio = FlexAspectRatio.Of(20, 13),
+                AspectMode = FlexAspectMode.Cover,
+            },
+            Body = new FlexBox
+            {
+                Layout = FlexLayout.Vertical,
+                Spacing = FlexSpacing.Sm,
+                Contents =
+                [
+                    new FlexText("Ramen Ichiban") { Weight = FlexWeight.Bold, Size = FlexSize.Xl },
+                    new FlexBox
+                    {
+                        Layout = FlexLayout.Baseline,
+                        Margin = FlexSpacing.Md,
+                        Contents =
+                        [
+                            new FlexIcon("https://example.com/star.png") { Size = FlexSize.Sm },
+                            new FlexText("4.5") { Size = FlexSize.Sm, Color = FlexColor.Rgb(0x99, 0x99, 0x99), Margin = FlexSpacing.Md, Flex = 0 },
+                        ],
+                    },
+                ],
+            },
+            Footer = new FlexBox
+            {
+                Layout = FlexLayout.Vertical,
+                Contents = [new FlexButton(new UriAction("https://example.com/book") { Label = "Book a table" }) { Style = FlexButtonStyle.Primary }],
+            },
+        };
+
+        Assert.IsTrue(new FlexMessage("Ramen Ichiban, rated 4.5", card).Validate().IsSuccess);
+    }
+
+    [TestMethod]
     public void GetRawNodePaths_ListsOnlyRawNodes_WithTheValidationPathFormat()
     {
         var message = FlexMessage.Parse(
