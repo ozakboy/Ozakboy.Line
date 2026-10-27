@@ -1,0 +1,53 @@
+{
+  "source": "Webhook event objects — Message event, Text message object (mention)",
+  "retrieved": "依官方文件(LINE Messaging API reference · Webhook event objects)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "destination": "Utest-destination",
+    "events": [
+      {
+        "mode": "active",
+        "timestamp": 1799999999000,
+        "webhookEventId": "01TESTEVENT000000000000000",
+        "deliveryContext": {
+          "isRedelivery": false
+        },
+        "source": {
+          "type": "group",
+          "groupId": "Ctest-group-id",
+          "userId": "Utest-user-id"
+        },
+        "type": "message",
+        "replyToken": "test-reply-token",
+        "message": {
+          "id": "444573844083572738",
+          "type": "text",
+          "quoteToken": "test-quote-token",
+          "text": "@All @bot Hello",
+          "mention": {
+            "mentionees": [
+              {
+                "index": 0,
+                "length": 4,
+                "type": "all"
+              },
+              {
+                "index": 5,
+                "length": 4,
+                "type": "user",
+                "userId": "Utest-bot-id",
+                "isSelf": true
+              },
+              {
+                "index": 10,
+                "length": 3,
+                "type": "user",
+                "userId": "Utest-someone",
+                "isSelf": false
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

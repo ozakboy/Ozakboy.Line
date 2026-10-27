@@ -1,0 +1,35 @@
+{
+  "source": "Webhook event objects — Member joined event (memberJoined)",
+  "retrieved": "依官方文件(LINE Messaging API reference · Webhook event objects)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "destination": "Utest-destination",
+    "events": [
+      {
+        "mode": "active",
+        "timestamp": 1799999999000,
+        "webhookEventId": "01TESTEVENT000000000000000",
+        "deliveryContext": {
+          "isRedelivery": false
+        },
+        "source": {
+          "type": "group",
+          "groupId": "Ctest-group-id"
+        },
+        "type": "memberJoined",
+        "replyToken": "test-reply-token",
+        "joined": {
+          "members": [
+            {
+              "type": "user",
+              "userId": "Utest-joined-1"
+            },
+            {
+              "type": "user",
+              "userId": "Utest-joined-2"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

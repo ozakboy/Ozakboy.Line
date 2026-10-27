@@ -1,0 +1,44 @@
+{
+  "source": "Webhook event objects — Message event, Text message object (emojis)",
+  "retrieved": "依官方文件(LINE Messaging API reference · Webhook event objects)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "destination": "Utest-destination",
+    "events": [
+      {
+        "mode": "active",
+        "timestamp": 1799999999000,
+        "webhookEventId": "01TESTEVENT000000000000000",
+        "deliveryContext": {
+          "isRedelivery": false
+        },
+        "source": {
+          "type": "group",
+          "groupId": "Ctest-group-id",
+          "userId": "Utest-user-id"
+        },
+        "type": "message",
+        "replyToken": "test-reply-token",
+        "message": {
+          "id": "444573844083572737",
+          "type": "text",
+          "quoteToken": "test-quote-token",
+          "text": "$ LINE emoji $",
+          "emojis": [
+            {
+              "index": 0,
+              "length": 1,
+              "productId": "5ac1bfd5040ab15980c9b435",
+              "emojiId": "001"
+            },
+            {
+              "index": 13,
+              "length": 1,
+              "productId": "5ac1bfd5040ab15980c9b435",
+              "emojiId": "002"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

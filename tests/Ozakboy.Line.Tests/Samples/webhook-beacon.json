@@ -1,0 +1,28 @@
+{
+  "source": "Webhook event objects — Beacon event (beacon)",
+  "retrieved": "依官方文件(LINE Messaging API reference · Webhook event objects)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "destination": "Utest-destination",
+    "events": [
+      {
+        "mode": "active",
+        "timestamp": 1799999999000,
+        "webhookEventId": "01TESTEVENT000000000000000",
+        "deliveryContext": {
+          "isRedelivery": false
+        },
+        "source": {
+          "type": "user",
+          "userId": "Utest-user-id"
+        },
+        "type": "beacon",
+        "replyToken": "test-reply-token",
+        "beacon": {
+          "hwid": "d41d8cd98f",
+          "type": "enter",
+          "dm": "1234567890abcdef"
+        }
+      }
+    ]
+  }
+}

@@ -133,6 +133,12 @@ public static class LineWebhookParser
             Postback = ReadPostback(element),
             Follow = ReadFollow(element),
             VideoPlayComplete = ReadVideoPlayComplete(element),
+            Joined = ReadMemberChange(element, "joined"),
+            Left = ReadMemberChange(element, "left"),
+            Beacon = ReadBeacon(element),
+            Unsend = ReadUnsend(element),
+            Link = ReadLink(element),
+            Membership = ReadMembership(element),
 
             // Clone 之後才保存:JsonElement 的生命週期綁在 JsonDocument 上,而那份 document 在
             // Parse 回傳之前就已經釋放,不 Clone 的話呼叫端拿到的是一個會擲出例外的空殼。
@@ -204,7 +210,255 @@ public static class LineWebhookParser
             Duration = (int?)ReadInt64(message, "duration"),
             FileName = ReadString(message, "fileName"),
             FileSize = ReadInt64(message, "fileSize"),
+            Emojis = ReadEmojis(message),
+            Mention = ReadMention(message),
+            ImageSet = ReadImageSet(message),
+            QuotedMessageId = ReadString(message, "quotedMessageId"),
+            MarkAsReadToken = ReadString(message, "markAsReadToken"),
+            StickerResourceType = ReadString(message, "stickerResourceType"),
+            Keywords = ReadStrings(message, "keywords"),
         };
+    }
+
+    /// <summary>
+    /// 讀出文字裡的 LINE emoji。
+    /// Reads the LINE emojis in a text.
+    /// </summary>
+    /// <param name="message">訊息元素。The message element.</param>
+    /// <returns>沒有 <c>emojis</c> 陣列時為 <see langword="null"/>。<see langword="null"/> when there is no <c>emojis</c> array.</returns>
+    private static List<LineWebhookEmoji>? ReadEmojis(JsonElement message)
+    {
+        if (!message.TryGetProperty("emojis", out var emojis) || emojis.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var result = new List<LineWebhookEmoji>();
+        foreach (var emoji in emojis.EnumerateArray())
+        {
+            if (emoji.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            result.Add(new LineWebhookEmoji
+            {
+                Index = (int)(ReadInt64(emoji, "index") ?? 0L),
+                Length = (int)(ReadInt64(emoji, "length") ?? 0L),
+                ProductId = ReadString(emoji, "productId") ?? string.Empty,
+                EmojiId = ReadString(emoji, "emojiId") ?? string.Empty,
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 讀出文字裡的提及資訊。
+    /// Reads the mention information in a text.
+    /// </summary>
+    /// <param name="message">訊息元素。The message element.</param>
+    /// <returns>沒有 <c>mention</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>mention</c> object.</returns>
+    private static LineWebhookMention? ReadMention(JsonElement message)
+    {
+        if (!message.TryGetProperty("mention", out var mention) || mention.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var mentionees = new List<LineWebhookMentionee>();
+        if (mention.TryGetProperty("mentionees", out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var mentionee in array.EnumerateArray())
+            {
+                if (mentionee.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                mentionees.Add(new LineWebhookMentionee
+                {
+                    Index = (int)(ReadInt64(mentionee, "index") ?? 0L),
+                    Length = (int)(ReadInt64(mentionee, "length") ?? 0L),
+                    Type = ReadString(mentionee, "type") ?? string.Empty,
+                    UserId = ReadString(mentionee, "userId"),
+                    IsSelf = ReadBoolean(mentionee, "isSelf"),
+                });
+            }
+        }
+
+        return new LineWebhookMention { Mentionees = mentionees };
+    }
+
+    /// <summary>
+    /// 讀出圖片組資訊。
+    /// Reads the image set information.
+    /// </summary>
+    /// <param name="message">訊息元素。The message element.</param>
+    /// <returns>沒有 <c>imageSet</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>imageSet</c> object.</returns>
+    private static LineWebhookImageSet? ReadImageSet(JsonElement message)
+    {
+        if (!message.TryGetProperty("imageSet", out var imageSet) || imageSet.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new LineWebhookImageSet
+        {
+            Id = ReadString(imageSet, "id") ?? string.Empty,
+            Index = (int)(ReadInt64(imageSet, "index") ?? 0L),
+            Total = (int)(ReadInt64(imageSet, "total") ?? 0L),
+        };
+    }
+
+    /// <summary>
+    /// 讀出成員變動(<c>joined</c> 或 <c>left</c>)。
+    /// Reads a membership change (<c>joined</c> or <c>left</c>).
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <param name="name"><c>joined</c> 或 <c>left</c>。Either <c>joined</c> or <c>left</c>.</param>
+    /// <returns>沒有這個物件時為 <see langword="null"/>。<see langword="null"/> when the object is absent.</returns>
+    private static LineWebhookMemberChange? ReadMemberChange(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var change) || change.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var members = new List<LineWebhookMember>();
+        if (change.TryGetProperty("members", out var array) && array.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var member in array.EnumerateArray())
+            {
+                if (member.ValueKind == JsonValueKind.Object)
+                {
+                    members.Add(new LineWebhookMember
+                    {
+                        Type = ReadString(member, "type") ?? string.Empty,
+                        UserId = ReadString(member, "userId"),
+                    });
+                }
+            }
+        }
+
+        return new LineWebhookMemberChange { Members = members };
+    }
+
+    /// <summary>
+    /// 讀出 beacon 的附加資訊。
+    /// Reads the beacon details.
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <returns>沒有 <c>beacon</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>beacon</c> object.</returns>
+    private static LineWebhookBeacon? ReadBeacon(JsonElement element)
+    {
+        if (!element.TryGetProperty("beacon", out var beacon) || beacon.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new LineWebhookBeacon
+        {
+            Hwid = ReadString(beacon, "hwid") ?? string.Empty,
+            Type = ReadString(beacon, "type") ?? string.Empty,
+            Dm = ReadString(beacon, "dm"),
+        };
+    }
+
+    /// <summary>
+    /// 讀出收回訊息的附加資訊。
+    /// Reads the unsend details.
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <returns>沒有 <c>unsend</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>unsend</c> object.</returns>
+    private static LineWebhookUnsend? ReadUnsend(JsonElement element)
+    {
+        if (!element.TryGetProperty("unsend", out var unsend) || unsend.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new LineWebhookUnsend { MessageId = ReadString(unsend, "messageId") ?? string.Empty };
+    }
+
+    /// <summary>
+    /// 讀出帳號連結的附加資訊。
+    /// Reads the account link details.
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <returns>沒有 <c>link</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>link</c> object.</returns>
+    private static LineWebhookLink? ReadLink(JsonElement element)
+    {
+        if (!element.TryGetProperty("link", out var link) || link.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new LineWebhookLink
+        {
+            Result = ReadString(link, "result") ?? string.Empty,
+            Nonce = ReadString(link, "nonce"),
+        };
+    }
+
+    /// <summary>
+    /// 讀出會員方案的附加資訊。
+    /// Reads the membership details.
+    /// </summary>
+    /// <param name="element">事件元素。The event element.</param>
+    /// <returns>沒有 <c>membership</c> 物件時為 <see langword="null"/>。<see langword="null"/> when there is no <c>membership</c> object.</returns>
+    private static LineWebhookMembership? ReadMembership(JsonElement element)
+    {
+        if (!element.TryGetProperty("membership", out var membership) || membership.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        // 方案識別碼在 LINE 的文件是整數;容忍以字串形式送來的數字,免得一次格式漂移就整個讀成 null。
+        // LINE documents the plan identifier as an integer; a number sent as a string is tolerated so one format
+        // drift does not turn the whole value into null.
+        long? membershipId = ReadInt64(membership, "membershipId");
+        if (membershipId is null
+            && long.TryParse(
+                ReadString(membership, "membershipId"),
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsed))
+        {
+            membershipId = parsed;
+        }
+
+        return new LineWebhookMembership
+        {
+            Type = ReadString(membership, "type") ?? string.Empty,
+            MembershipId = membershipId,
+        };
+    }
+
+    /// <summary>
+    /// 讀一個字串陣列欄位。
+    /// Reads a string-array field.
+    /// </summary>
+    /// <param name="element">來源物件。The source object.</param>
+    /// <param name="name">欄位名。The field name.</param>
+    /// <returns>不存在或不是陣列時為 <see langword="null"/>;陣列裡不是字串的項目會被略過。<see langword="null"/> when absent or not an array; non-string items are skipped.</returns>
+    private static List<string>? ReadStrings(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var result = new List<string>();
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String && item.GetString() is { } text)
+            {
+                result.Add(text);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

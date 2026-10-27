@@ -54,4 +54,7 @@ public static class LineWebhookEventTypes
 
     /// <summary>LINE Things 裝置事件。A LINE Things device event.</summary>
     public const string Things = "things";
+
+    /// <summary>使用者加入、退出或續訂了會員方案。The user joined, left, or renewed a membership plan.</summary>
+    public const string Membership = "membership";
 }

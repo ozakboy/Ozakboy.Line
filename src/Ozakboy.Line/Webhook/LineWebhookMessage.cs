@@ -41,6 +41,51 @@ public sealed class LineWebhookMessage
     public string? QuoteToken { get; init; }
 
     /// <summary>
+    /// 文字裡的 LINE emoji;只有帶 emoji 的文字訊息有,否則為 <see langword="null"/>。
+    /// The LINE emojis in the text; present only on a text message that has some, otherwise <see langword="null"/>.
+    /// </summary>
+    public IReadOnlyList<LineWebhookEmoji>? Emojis { get; init; }
+
+    /// <summary>
+    /// 提及(@)資訊;只有帶提及的文字訊息有,否則為 <see langword="null"/>。
+    /// The mention (@) information; present only on a text message that mentions someone, otherwise
+    /// <see langword="null"/>.
+    /// </summary>
+    public LineWebhookMention? Mention { get; init; }
+
+    /// <summary>
+    /// 圖片組資訊;只有一次傳多張圖時的圖片訊息有,否則為 <see langword="null"/>。
+    /// The image set information; present only on an image message sent as part of several, otherwise
+    /// <see langword="null"/>.
+    /// </summary>
+    public LineWebhookImageSet? ImageSet { get; init; }
+
+    /// <summary>
+    /// 這則訊息引用的訊息識別碼;只有引用回覆的訊息有。
+    /// The identifier of the message this one quotes; present only on a quoting reply.
+    /// </summary>
+    public string? QuotedMessageId { get; init; }
+
+    /// <summary>
+    /// 把這則訊息標為已讀用的權杖;沒有時為 <see langword="null"/>。
+    /// The token for marking this message as read, or <see langword="null"/> when absent.
+    /// </summary>
+    public string? MarkAsReadToken { get; init; }
+
+    /// <summary>
+    /// 貼圖的資源型別(例如 <c>STATIC</c>、<c>ANIMATION</c>、<c>SOUND</c>、<c>POPUP</c>),只有貼圖訊息有。
+    /// The sticker's resource type — <c>STATIC</c>, <c>ANIMATION</c>, <c>SOUND</c>, <c>POPUP</c> and so on —
+    /// present only on a sticker message.
+    /// </summary>
+    public string? StickerResourceType { get; init; }
+
+    /// <summary>
+    /// 貼圖的關鍵字,只有貼圖訊息有。
+    /// The sticker's keywords, present only on a sticker message.
+    /// </summary>
+    public IReadOnlyList<string>? Keywords { get; init; }
+
+    /// <summary>
     /// 緯度,只有位置訊息有。
     /// The latitude, present only on a location message.
     /// </summary>

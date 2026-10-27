@@ -98,14 +98,54 @@ public sealed class LineWebhookEvent
     public LineWebhookVideoPlayComplete? VideoPlayComplete { get; init; }
 
     /// <summary>
+    /// 加入的成員;只有 <c>memberJoined</c> 事件有。
+    /// The members who joined, present only on a <c>memberJoined</c> event.
+    /// </summary>
+    /// <remarks>
+    /// <c>join</c> 與 <c>leave</c>(官方帳號自己被加入或移出)沒有附加內容,用 <see cref="Type"/> 判斷即可。
+    /// <c>join</c> and <c>leave</c> — the account itself being added or removed — carry nothing extra; test
+    /// <see cref="Type"/> instead.
+    /// </remarks>
+    public LineWebhookMemberChange? Joined { get; init; }
+
+    /// <summary>
+    /// 離開的成員;只有 <c>memberLeft</c> 事件有。
+    /// The members who left, present only on a <c>memberLeft</c> event.
+    /// </summary>
+    public LineWebhookMemberChange? Left { get; init; }
+
+    /// <summary>
+    /// beacon 的附加資訊;只有 <c>beacon</c> 事件有。
+    /// The beacon details, present only on a <c>beacon</c> event.
+    /// </summary>
+    public LineWebhookBeacon? Beacon { get; init; }
+
+    /// <summary>
+    /// 收回訊息的附加資訊;只有 <c>unsend</c> 事件有。
+    /// The unsend details, present only on an <c>unsend</c> event.
+    /// </summary>
+    public LineWebhookUnsend? Unsend { get; init; }
+
+    /// <summary>
+    /// 帳號連結的附加資訊;只有 <c>accountLink</c> 事件有。
+    /// The account link details, present only on an <c>accountLink</c> event.
+    /// </summary>
+    public LineWebhookLink? Link { get; init; }
+
+    /// <summary>
+    /// 會員方案的附加資訊;只有 <c>membership</c> 事件有。
+    /// The membership details, present only on a <c>membership</c> event.
+    /// </summary>
+    public LineWebhookMembership? Membership { get; init; }
+
+    /// <summary>
     /// 這個事件的原始 JSON。
     /// This event's original JSON.
     /// </summary>
     /// <remarks>
-    /// 本套件沒有建模的欄位(beacon、things、accountLink 的內容,以及 LINE 之後新增的任何東西)
-    /// 都在這裡。有這一份,套件跟不上 LINE 的腳步就不會變成「收得到但拿不到」。
-    /// Everything this package does not model — the contents of beacon, things, and accountLink events, and
-    /// whatever LINE adds later — is here. With it, a package that has not caught up with LINE never turns into
+    /// 本套件沒有建模的欄位(things 的內容,以及 LINE 之後新增的任何東西)都在這裡。有這一份,套件跟不上 LINE 的腳步就不會變成「收得到但拿不到」。
+    /// Everything this package does not model — the contents of things events, and whatever LINE adds later — is
+    /// here. With it, a package that has not caught up with LINE never turns into
     /// "the event arrives but the data is out of reach".
     /// </remarks>
     public JsonElement Raw { get; init; }
