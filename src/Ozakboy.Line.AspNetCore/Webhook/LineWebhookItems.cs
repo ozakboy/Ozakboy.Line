@@ -23,4 +23,15 @@ public static class LineWebhookItems
     /// event.
     /// </remarks>
     public const string AutoReplyOutcome = "Ozakboy.Line.AutoReplyOutcome";
+
+    /// <summary>
+    /// 本次請求有事件因維護模式被擋下時為 <see langword="true"/>(型別 <see cref="bool"/>);沒有被擋下就沒有這個鍵。
+    /// <see langword="true"/> (a <see cref="bool"/>) when maintenance mode held back at least one event in this
+    /// request; the key is absent otherwise.
+    /// </summary>
+    /// <remarks>
+    /// 見 <see cref="LineWebhookEndpointOptions.Maintenance"/>。
+    /// See <see cref="LineWebhookEndpointOptions.Maintenance"/>.
+    /// </remarks>
+    public const string MaintenanceSkipped = "Ozakboy.Line.MaintenanceSkipped";
 }

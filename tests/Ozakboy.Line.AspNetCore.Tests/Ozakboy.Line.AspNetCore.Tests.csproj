@@ -27,6 +27,16 @@
     <ProjectReference Include="..\..\src\Ozakboy.Line.AspNetCore\Ozakboy.Line.AspNetCore.csproj" />
   </ItemGroup>
 
+  <!--
+    記錄回覆與推播的假用戶端,從核心測試專案連結過來,不再寫第二份。
+    它是 DispatchProxy 實作,不隨 ILineMessagingClient 增加成員而需要維護。
+    A fake client that records replies and pushes, linked in from the core test project instead of being written
+    twice. It is a DispatchProxy, so it needs no upkeep when ILineMessagingClient gains members.
+  -->
+  <ItemGroup>
+    <Compile Include="..\Ozakboy.Line.Tests\TestSupport\RecordingLineMessagingClient.cs" Link="TestSupport\RecordingLineMessagingClient.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
     <Using Include="Ozakboy.Core.Abstractions" />

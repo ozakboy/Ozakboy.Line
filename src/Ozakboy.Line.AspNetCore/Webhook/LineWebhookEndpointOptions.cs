@@ -33,4 +33,25 @@ public sealed class LineWebhookEndpointOptions
     /// </para>
     /// </remarks>
     public bool AutoReply { get; set; }
+
+    /// <summary>
+    /// 維護模式:開啟時,非管理員的事件不交給處理常式也不跑自動回覆,只回一則維護中的文字。
+    /// Maintenance mode: while on, a non-administrator's event reaches neither the handler nor auto reply and
+    /// is answered with a maintenance text.
+    /// </summary>
+    /// <remarks>
+    /// 對所有 <c>MapLineWebhook</c> 的逐事件多載生效(含泛型的 <c>MapLineWebhook&lt;THandler&gt;</c>);
+    /// 整批內容的多載由呼叫端自己分工,不套用。
+    /// It applies to every per-event <c>MapLineWebhook</c> overload, the generic
+    /// <c>MapLineWebhook&lt;THandler&gt;</c> included; the whole-payload overload leaves the division of work to
+    /// the caller and is not covered.
+    /// </remarks>
+    public LineWebhookMaintenanceOptions Maintenance { get; } = new();
+
+    /// <summary>
+    /// 錯誤通知:處理常式擲出例外時,推播通知管理員。生效範圍同 <see cref="Maintenance"/>。
+    /// Error notification: push a note to administrators when a handler throws. It covers the same overloads as
+    /// <see cref="Maintenance"/>.
+    /// </summary>
+    public LineWebhookErrorNotificationOptions ErrorNotification { get; } = new();
 }

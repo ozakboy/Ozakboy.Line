@@ -99,8 +99,11 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     /// Thrown when <paramref name="endpoints"/> or <paramref name="handler"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// 開啟了自動回覆卻沒有註冊 <see cref="ILineAutoReplyService"/> 時,在<b>掛端點當下</b>擲出。
-    /// Thrown <b>while mapping</b> when auto reply is on but no <see cref="ILineAutoReplyService"/> is registered.
+    /// 開啟了自動回覆卻沒有註冊 <see cref="ILineAutoReplyService"/>,或開啟了維護模式 / 錯誤通知卻沒有管理員白名單
+    /// (或沒有註冊 <see cref="ILineMessagingClient"/>)時,在<b>掛端點當下</b>擲出。
+    /// Thrown <b>while mapping</b> when auto reply is on but no <see cref="ILineAutoReplyService"/> is registered,
+    /// or maintenance mode / error notification is on without an administrator allow-list (or without an
+    /// <see cref="ILineMessagingClient"/>).
     /// </exception>
     public static IEndpointConventionBuilder MapLineWebhook(
         this IEndpointRouteBuilder endpoints,
@@ -114,42 +117,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
         var options = new LineWebhookEndpointOptions();
         configure?.Invoke(options);
 
-        if (options.AutoReply && endpoints.ServiceProvider.GetService<ILineAutoReplyService>() is null)
-        {
-            // 在掛端點當下就失敗,而不是等第一個使用者傳訊息、發現沒有回應才開始查。
-            // 漏掉註冊在執行期沒有任何徵兆:端點回 200、log 一片乾淨,只是機器人不說話。
-            // Fail while mapping rather than when the first user's message goes unanswered. A missing
-            // registration leaves no trace at runtime: the endpoint answers 200, the log is clean, and the bot
-            // simply never speaks.
-            throw new InvalidOperationException(
-                "開啟了 webhook 端點的自動回覆,但容器裡沒有 ILineAutoReplyService,請先呼叫 services.AddLineAutoReply(...)。Auto reply is enabled on the webhook endpoint but no ILineAutoReplyService is registered; call services.AddLineAutoReply(...) first.");
-        }
-
-        return endpoints.MapLineWebhook(pattern, async (payload, context, cancellationToken) =>
-        {
-            var logger = CreateLogger(context);
-
-            for (var index = 0; index < payload.Events.Count; index++)
-            {
-                var webhookEvent = payload.Events[index];
-
-                if (options.AutoReply)
-                {
-                    await RunAutoReplyAsync(context, logger, webhookEvent, cancellationToken).ConfigureAwait(false);
-                }
-
-                try
-                {
-                    await handler(webhookEvent, context, cancellationToken).ConfigureAwait(false);
-                }
-#pragma warning disable CA1031 // 這裡刻意攔截所有例外:一個事件的失敗不得影響同一批的其他事件。
-                catch (Exception exception)
-#pragma warning restore CA1031
-                {
-                    Log.EventHandlerFailed(logger, webhookEvent.Type, webhookEvent.WebhookEventId, exception);
-                }
-            }
-        });
+        return MapEvents(endpoints, pattern, options, handler);
     }
 
     /// <summary>
@@ -319,5 +287,57 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             Level = LogLevel.Error,
             Message = "事件 {WebhookEventId} 的自動回覆擲出例外;處理常式照常執行。Auto reply threw for event {WebhookEventId}; the handler still runs.")]
         internal static partial void AutoReplyThrew(ILogger logger, string webhookEventId, Exception exception);
+
+        /// <summary>
+        /// 維護模式的回覆沒有送出時的記錄。
+        /// Logged when the maintenance reply could not be sent.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">事件識別碼。The event identifier.</param>
+        /// <param name="errorCode">失敗代碼。The failure code.</param>
+        [LoggerMessage(
+            EventId = 2204,
+            Level = LogLevel.Warning,
+            Message = "事件 {WebhookEventId} 的維護中回覆沒有送出({ErrorCode})。The maintenance reply for event {WebhookEventId} was not sent ({ErrorCode}).")]
+        internal static partial void MaintenanceReplyFailed(ILogger logger, string webhookEventId, string errorCode);
+
+        /// <summary>
+        /// 維護模式的回覆擲出例外時的記錄。
+        /// Logged when sending the maintenance reply threw.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">事件識別碼。The event identifier.</param>
+        /// <param name="exception">例外。The exception.</param>
+        [LoggerMessage(
+            EventId = 2205,
+            Level = LogLevel.Error,
+            Message = "事件 {WebhookEventId} 的維護中回覆擲出例外。Sending the maintenance reply for event {WebhookEventId} threw.")]
+        internal static partial void MaintenanceReplyThrew(ILogger logger, string webhookEventId, Exception exception);
+
+        /// <summary>
+        /// 錯誤通知沒有送達某位管理員時的記錄。
+        /// Logged when an error notification did not reach one administrator.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">觸發通知的事件識別碼。The identifier of the event that triggered it.</param>
+        /// <param name="errorCode">失敗代碼。The failure code.</param>
+        [LoggerMessage(
+            EventId = 2206,
+            Level = LogLevel.Warning,
+            Message = "事件 {WebhookEventId} 的錯誤通知沒有送達一位管理員({ErrorCode})。The error notification for event {WebhookEventId} did not reach an administrator ({ErrorCode}).")]
+        internal static partial void ErrorNotificationFailed(ILogger logger, string webhookEventId, string errorCode);
+
+        /// <summary>
+        /// 錯誤通知擲出例外(含逾時)時的記錄。
+        /// Logged when an error notification threw, a timeout included.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        /// <param name="webhookEventId">觸發通知的事件識別碼。The identifier of the event that triggered it.</param>
+        /// <param name="exception">例外。The exception.</param>
+        [LoggerMessage(
+            EventId = 2207,
+            Level = LogLevel.Error,
+            Message = "事件 {WebhookEventId} 的錯誤通知擲出例外。Sending the error notification for event {WebhookEventId} threw.")]
+        internal static partial void ErrorNotificationThrew(ILogger logger, string webhookEventId, Exception exception);
     }
 }
