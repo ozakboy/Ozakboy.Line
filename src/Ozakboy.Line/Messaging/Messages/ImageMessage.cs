@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 
@@ -13,6 +14,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// Both addresses must be HTTPS and are fetched by LINE's servers: an address on a private network, or one behind
 /// a login, produces no error at all — the user simply sees an image that never loads.
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class ImageMessage : LineMessage
 {
     /// <summary>

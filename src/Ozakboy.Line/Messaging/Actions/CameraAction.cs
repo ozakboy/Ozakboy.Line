@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Actions;
@@ -13,6 +14,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// an ordinary image message with nothing to say which button produced it, so matching them up means keeping the
 /// conversation's state yourself.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class CameraAction : LineAction
 {
     /// <inheritdoc />

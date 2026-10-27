@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 
@@ -14,6 +15,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// assembled by hand and its JSON copied out. This package therefore models none of it: hand the simulator's JSON
 /// over as it is, and upgrading the package never invalidates an existing layout.
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class FlexMessage : LineMessage
 {
     /// <summary>

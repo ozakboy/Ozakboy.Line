@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
@@ -28,6 +29,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// <see cref="LineMessagingLimits.MaxImagemapActions"/>, is checked locally.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class ImagemapMessage : LineMessage
 {
     /// <summary>

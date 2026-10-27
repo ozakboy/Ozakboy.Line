@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging.Messages;
@@ -14,6 +15,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// The text appears in the chat as though the user typed it. For a tap that leaves no trace, use
 /// <see cref="PostbackAction"/>.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class MessageAction : LineAction
 {
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
@@ -8,6 +9,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// 文字訊息。
 /// A text message.
 /// </summary>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class TextMessage : LineMessage
 {
     /// <summary>

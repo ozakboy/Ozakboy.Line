@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging.Messages;
@@ -8,6 +9,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// 開啟網址的動作。
 /// An action that opens a URL.
 /// </summary>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class UriAction : LineAction
 {
     /// <summary>

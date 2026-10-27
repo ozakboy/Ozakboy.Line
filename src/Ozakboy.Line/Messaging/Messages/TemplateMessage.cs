@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging.Messages.Template;
@@ -25,6 +26,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// choices or ten cards come ready-made.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class TemplateMessage : LineMessage
 {
     /// <summary>

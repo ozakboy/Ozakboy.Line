@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Actions;
@@ -10,6 +11,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// 與 <see cref="CameraAction"/> 同樣只能用在快速回覆上。
 /// Like <see cref="CameraAction"/>, this works on a quick reply only.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class CameraRollAction : LineAction
 {
     /// <inheritdoc />

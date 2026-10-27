@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
@@ -25,6 +26,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// a stray substitution has LINE reject the whole message.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class TextV2Message : LineMessage
 {
     /// <summary>

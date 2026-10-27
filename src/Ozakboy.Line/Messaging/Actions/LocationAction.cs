@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Actions;
@@ -12,6 +13,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// Like <see cref="CameraAction"/>, this works on a quick reply only; what the user sends arrives as a location
 /// message, in <see cref="Ozakboy.Line.Webhook.LineWebhookMessage.Latitude"/> and its neighbours.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class LocationAction : LineAction
 {
     /// <inheritdoc />

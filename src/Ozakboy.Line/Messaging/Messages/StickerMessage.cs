@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Messages;
@@ -10,6 +11,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// 只能送 LINE 公開清單上的貼圖;自製或需要購買的貼圖包送出去會被拒絕。
 /// Only stickers from LINE's published list can be sent; custom or paid sticker packs are refused.
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class StickerMessage : LineMessage
 {
     /// <summary>

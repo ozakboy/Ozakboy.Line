@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging.Messages;
@@ -14,6 +15,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// The data arrives as <see cref="Ozakboy.Line.Webhook.LineWebhookPostback.Data"/>. The user does not see it,
 /// but it makes a round trip through LINE verbatim, so it is no place for a secret or for unsigned authority.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class PostbackAction : LineAction
 {
     /// <summary>收起圖文選單。Closes the rich menu.</summary>

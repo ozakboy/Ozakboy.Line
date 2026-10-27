@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Actions;
@@ -19,6 +20,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// LINE also sends a <c>postback</c> event after the switch, carrying the <see cref="Data"/> given here.
 /// </para>
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class RichMenuSwitchAction : LineAction
 {
     /// <summary>

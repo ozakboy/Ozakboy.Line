@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Actions;
@@ -12,6 +13,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// The copy happens on the user's device and the server <b>receives no event at all</b>. Knowing whether anyone
 /// tapped it means pairing it with a <see cref="PostbackAction"/>; this action reports nothing by itself.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class ClipboardAction : LineAction
 {
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 
@@ -14,6 +15,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// another tool, its action types are not guaranteed to be modelled here, and keeping them verbatim is what stops
 /// a read from losing information.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class RawAction : LineAction
 {
     private readonly string _type;

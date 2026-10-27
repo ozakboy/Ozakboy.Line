@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 
 namespace Ozakboy.Line.Messaging.Messages;
@@ -11,6 +12,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// This is the package's escape hatch. When LINE adds a message type, or a field is not modelled yet, there is no
 /// need to wait for a package release: assemble the JSON and it goes out.
 /// </remarks>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class RawMessage : LineMessage
 {
     private readonly string _type;

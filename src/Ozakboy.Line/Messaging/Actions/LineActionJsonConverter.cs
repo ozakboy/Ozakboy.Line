@@ -58,3 +58,48 @@ internal sealed class LineActionJsonConverter : JsonConverter<LineAction>
         value.WriteTo(writer);
     }
 }
+
+/// <summary>
+/// 讓每一個具體動作型別都走各自的明確寫法。
+/// Routes every concrete action type through its own explicit writing.
+/// </summary>
+/// <remarks>
+/// 與 <see cref="Ozakboy.Line.Messaging.Messages.LineMessage"/> 同理:<see cref="LineAction"/> 上的
+/// <c>[JsonConverter]</c> 不會套用到衍生型別(屬性不被繼承),直接序列化 <c>new UriAction(...)</c> 會退回反射而寫出錯誤的 JSON。
+/// As with <see cref="Ozakboy.Line.Messaging.Messages.LineMessage"/>: the <c>[JsonConverter]</c> on
+/// <see cref="LineAction"/> does not apply to derived types (the attribute is not inherited), so serialising a
+/// <c>new UriAction(...)</c> directly falls back to reflection and writes wrong JSON.
+/// </remarks>
+internal sealed class LineActionJsonConverterFactory : JsonConverterFactory
+{
+    /// <inheritdoc />
+    public override bool CanConvert(Type typeToConvert) =>
+        typeToConvert is not null && typeToConvert != typeof(LineAction) && typeof(LineAction).IsAssignableFrom(typeToConvert);
+
+    /// <inheritdoc />
+    public override JsonConverter? CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+        (JsonConverter?)Activator.CreateInstance(typeof(LineActionJsonConverter<>).MakeGenericType(typeToConvert));
+}
+
+/// <summary>
+/// 具體動作型別的寫出轉換器,只寫不讀。
+/// The write-only converter for a concrete action type.
+/// </summary>
+/// <typeparam name="T">具體動作型別。The concrete action type.</typeparam>
+#pragma warning disable CA1812 // 由工廠以反射具現化,分析器看不出來。Instantiated by reflection from the factory; the analyser cannot see it.
+internal sealed class LineActionJsonConverter<T> : JsonConverter<T>
+    where T : LineAction
+#pragma warning restore CA1812
+{
+    /// <inheritdoc />
+    public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        throw new NotSupportedException(
+            "具體動作型別不支援反序列化;請以 LineAction 為型別讀回(會得到 RawAction)。Concrete action types cannot be deserialised; read with LineAction as the type (which yields a RawAction).");
+
+    /// <inheritdoc />
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        value.WriteTo(writer);
+    }
+}

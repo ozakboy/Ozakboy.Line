@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 
@@ -7,6 +8,7 @@ namespace Ozakboy.Line.Messaging.Messages;
 /// 語音訊息。
 /// An audio message.
 /// </summary>
+[JsonConverter(typeof(LineMessageJsonConverterFactory))]
 public sealed class AudioMessage : LineMessage
 {
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
@@ -19,6 +20,7 @@ namespace Ozakboy.Line.Messaging.Actions;
 /// chosen value sits in <c>postback.params</c> in the original JSON. Keeping them apart is what lets one picker
 /// be reused: <see cref="Data"/> says what is being chosen and <c>params</c> says what was chosen.
 /// </remarks>
+[JsonConverter(typeof(LineActionJsonConverterFactory))]
 public sealed class DatetimePickerAction : LineAction
 {
     /// <summary>只選日期。A date only.</summary>
