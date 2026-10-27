@@ -36,7 +36,7 @@
     that was missed either throwing quietly or answering an unexpected success inside a test.
   -->
   <ItemGroup>
-    <Compile Include="..\Ozakboy.Line.Tests\TestSupport\FakeLineMessagingClient.cs" Link="TestSupport\FakeLineMessagingClient.cs" />
+    <Compile Include="..\Ozakboy.Line.Tests\TestSupport\FakeLineMessagingClient*.cs" Link="TestSupport\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
