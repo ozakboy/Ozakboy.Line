@@ -516,7 +516,7 @@ app.UseRouting();
 app.MapLineMcp();
 ```
 
-**鐵則:AI 不得直接發送。** 預設的 `Review` 模式下,`line_send_push` / `line_send_multicast` / `line_send_broadcast` / `line_replace_rich_menu` 一則訊息都不會送出 —— 它們把內容寫進待發佇列,狀態 `PendingReview`,等宿主的人核准。核准的 API(`ILineMcpOutboxService.ApproveAndSendAsync`)**不是任何一個工具**,只給宿主程式呼叫:待審制度的價值就在於提案的一方沒有核准權。`Direct` 模式會直接送,但仍然寫一筆紀錄 —— 沒有紀錄的話,事後沒有任何地方查得出「那則訊息是誰、什麼時候、為什麼發的」。
+**鐵則:AI 不得直接發送。** 預設的 `Review` 模式下,`line_send_push` / `line_send_multicast` / `line_send_broadcast` / `line_replace_rich_menu` / `line_create_liff_app` / `line_delete_liff_app` 什麼都不會執行 —— 它們把內容寫進待發佇列,狀態 `PendingReview`,等宿主的人核准。核准的 API(`ILineMcpOutboxService.ApproveAndSendAsync`)**不是任何一個工具**,只給宿主程式呼叫:待審制度的價值就在於提案的一方沒有核准權。`Direct` 模式會直接送,但仍然寫一筆紀錄 —— 沒有紀錄的話,事後沒有任何地方查得出「那則訊息是誰、什麼時候、為什麼發的」。
 
 每日還有一道建立上限(預設 10 筆,依 `TimeZoneId` 的當地日期計算)。這是防暴走的閘:AI 在迴圈裡重試同一個工具是很常見的失敗模式,沒有上限時那個迴圈會把待審佇列灌到沒有人願意去看。
 
@@ -544,11 +544,11 @@ builder.Services.AddMcpServer()
 | 圖文選單 | `line_list_rich_menus` · `line_get_default_rich_menu` · `line_list_rich_menu_aliases` · `line_validate_rich_menu` · `line_replace_rich_menu`(走待審) |
 | 自動回覆 | `line_list_auto_replies` · `line_upsert_auto_reply` · `line_delete_auto_reply` · `line_test_auto_reply` |
 | 訊息範本 | `line_list_templates` · `line_get_template` · `line_upsert_template` · `line_delete_template` · `line_render_template` |
-| LIFF | `line_list_liff_apps` · `line_create_liff_app` · `line_delete_liff_app` |
+| LIFF | `line_list_liff_apps` · `line_create_liff_app`(走待審)· `line_delete_liff_app`(走待審) |
 
 規則與範本的工具**不走待審**,因為它們不會自己送訊息:改壞一條規則的後果是回錯話,而不是主動打擾全體好友,改回來也只是再 upsert 一次。要完全禁止的話有 `AllowRuleEdits` / `AllowTemplateEdits` / `AllowRichMenuChanges` 三個開關。宿主沒有 `AddLineTemplates` / `AddLineAutoReply` 時,那幾個工具仍然掛得上,只是呼叫時回一句「未啟用」—— 這比工具根本不出現清楚。
 
-四個新的讀取工具(`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`)不改變任何東西,也不計每日額度。`line_get_delivery_stats` 收一個 `yyyy-MM-dd` 日期,一次回覆、推播、群發、廣播四種管道;統計尚未備妥的管道回報 `unready` 且數量為 null,不是 0。LIFF 工具需要 `ILineLiffClient`,宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。**建立與刪除 LIFF 應用程式不走待審佇列**:它們改的是帳號設定而不是送出訊息,所以各自改寫一行日誌 —— 而刪除會讓所有指向它的連結失效。三個送出工具多了選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存,核准時才套用。
+四個新的讀取工具(`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`)不改變任何東西,也不計每日額度。`line_get_delivery_stats` 收一個 `yyyy-MM-dd` 日期,一次回覆、推播、群發、廣播四種管道;統計尚未備妥的管道回報 `unready` 且數量為 null,不是 0。LIFF 工具需要 `ILineLiffClient`,宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。**建立與刪除 LIFF 應用程式與 `line_replace_rich_menu` 一樣走待審佇列**:`Review` 模式下只把計畫排進佇列(待發種類 `LiffCreate` 與 `LiffDelete`),由人核准後 `ILineMcpOutboxService.ApproveAndSendAsync` 才呼叫 `ILineLiffClient` —— 刪除會讓所有指向它的連結失效,不能讓 AI 單獨決定。`Direct` 模式先執行再記錄,執行時寫一行日誌;未呼叫 `AddLineLiff` 時核准會把項目標為 `Failed`(`line.not_configured`)。`line_list_liff_apps` 仍是直接、唯讀的查詢。三個送出工具多了選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存,核准時才套用。
 
 ---
 

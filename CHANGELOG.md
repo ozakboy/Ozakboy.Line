@@ -116,15 +116,19 @@ LINE 對訊息與動作的上限在本地檢查,以及七個新的 MCP 工具。
   (all four channels for one `yyyy-MM-dd` date; an `unready` channel is reported as it is) and
   `line_get_message_event_insight` are read-only and do not count against the daily cap. `line_list_liff_apps`,
   `line_create_liff_app` and `line_delete_liff_app` manage LIFF apps; when the host has not called `AddLineLiff` they
-  answer `line.not_configured`. Creating and deleting change the account's configuration rather than send a message,
-  so they skip the review queue and write a log line. `line_send_push`, `line_send_multicast` and
+  answer `line.not_configured`. Listing is read-only; creating and deleting change the account's configuration, so
+  like `line_replace_rich_menu` they go through the review queue (new outbox kinds `LiffCreate` and `LiffDelete`,
+  executed on approval; direct mode executes first and records afterwards) and count against the daily cap, with a
+  log line on execution; approving one without `AddLineLiff` marks it `Failed` as `line.not_configured`. `line_send_push`, `line_send_multicast` and
   `line_send_broadcast` take an optional `customAggregationUnit`, checked when proposed and stored with the outbox
   item; items queued by 0.2.0 approve as before.
   **`Ozakboy.Line.Mcp` — 七個工具。** `line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`
   (某個 `yyyy-MM-dd` 日期四種管道一次回,`unready` 的管道如實回報)與 `line_get_message_event_insight`
   都是唯讀,不計每日額度。`line_list_liff_apps`、`line_create_liff_app` 與 `line_delete_liff_app` 管理 LIFF
-  應用程式;宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。建立與刪除改的是帳號設定而不是送出訊息,
-  所以不進待審佇列,改寫一行日誌。`line_send_push`、`line_send_multicast` 與 `line_send_broadcast` 多了
+  應用程式;宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。查詢唯讀;建立與刪除改的是帳號設定,
+  所以與 `line_replace_rich_menu` 一樣走待審佇列(新的待發種類 `LiffCreate` 與 `LiffDelete`,核准時才執行;
+  直接模式先執行再記錄)並計入每日上限,執行時寫一行日誌;未註冊 `AddLineLiff` 時核准會標為 `Failed`
+  (`line.not_configured`)。`line_send_push`、`line_send_multicast` 與 `line_send_broadcast` 多了
   選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存;0.2.0 排進佇列的項目照常核准。
 
 - **New error codes.** `line.validation.invalid_message`, `line.validation.invalid_action`,

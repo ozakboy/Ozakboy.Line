@@ -70,7 +70,9 @@ public static class LineMcpServiceCollectionExtensions
             provider.GetRequiredService<ILineMcpOutboxStore>(),
             provider.GetRequiredService<ILineMessagingClient>(),
             provider.GetRequiredService<IHttpClientFactory>(),
-            provider.GetRequiredService<TimeProvider>()));
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetService<Ozakboy.Line.Liff.ILineLiffClient>(),
+            provider.GetService<Microsoft.Extensions.Logging.ILogger<LineMcpOutboxService>>()));
 
         return services;
     }

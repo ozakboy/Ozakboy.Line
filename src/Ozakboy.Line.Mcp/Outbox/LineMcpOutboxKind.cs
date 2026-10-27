@@ -44,4 +44,22 @@ public enum LineMcpOutboxKind
     /// fetched at the moment of approval.
     /// </remarks>
     RichMenuReplace = 3,
+
+    /// <summary>
+    /// 建立 LIFF 應用程式。內容為 <c>{ "viewType": "…", "url": "…", "description": "…", "botPrompt": "…" }</c>
+    /// (<c>botPrompt</c> 選填)。
+    /// A LIFF app creation. The payload is
+    /// <c>{ "viewType": "…", "url": "…", "description": "…", "botPrompt": "…" }</c> (<c>botPrompt</c> optional).
+    /// </summary>
+    /// <remarks>
+    /// 數值接在既有項目之後,0.2.0 寫下的 JSON 檔照常讀得出來。
+    /// The value follows the existing ones, so a JSON file written by 0.2.0 still reads.
+    /// </remarks>
+    LiffCreate = 4,
+
+    /// <summary>
+    /// 刪除 LIFF 應用程式。內容為 <c>{ "liffId": "…" }</c>。
+    /// A LIFF app deletion. The payload is <c>{ "liffId": "…" }</c>.
+    /// </summary>
+    LiffDelete = 5,
 }

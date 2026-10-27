@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Liff;
 using Ozakboy.Line.Messaging;
 using Ozakboy.Line.Messaging.RichMenu;
 
@@ -31,6 +33,8 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
     private readonly ILineMessagingClient _messaging;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _clock;
+    private readonly ILineLiffClient? _liff;
+    private readonly ILogger? _logger;
 
     /// <summary>
     /// 建立服務。
@@ -40,6 +44,13 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
     /// <param name="messaging">Messaging API 用戶端。The Messaging API client.</param>
     /// <param name="httpClientFactory">抓圖用的用戶端工廠。The client factory used to fetch images.</param>
     /// <param name="clock">時間來源;為 <see langword="null"/> 時用系統時鐘。The time source, or <see langword="null"/> for the system clock.</param>
+    /// <param name="liff">
+    /// LIFF 用戶端;宿主沒呼叫 <c>AddLineLiff</c> 時為 <see langword="null"/>,核准 LIFF 項目會以
+    /// <see cref="LineErrorCodes.NotConfigured"/> 標為失敗。
+    /// The LIFF client; <see langword="null"/> when the host did not call <c>AddLineLiff</c>, in which case
+    /// approving a LIFF item marks it failed with <see cref="LineErrorCodes.NotConfigured"/>.
+    /// </param>
+    /// <param name="logger">日誌記錄器,可為 <see langword="null"/>。The logger; may be <see langword="null"/>.</param>
     /// <exception cref="ArgumentNullException">
     /// 前三個參數之一為 <see langword="null"/> 時擲出。
     /// Thrown when any of the first three arguments is <see langword="null"/>.
@@ -48,7 +59,9 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
         ILineMcpOutboxStore store,
         ILineMessagingClient messaging,
         IHttpClientFactory httpClientFactory,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        ILineLiffClient? liff = null,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(messaging);
@@ -58,6 +71,8 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
         _messaging = messaging;
         _httpClientFactory = httpClientFactory;
         _clock = clock ?? TimeProvider.System;
+        _liff = liff;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -189,6 +204,10 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
                 LineMcpOutboxKind.Broadcast => await _messaging
                     .BroadcastRawJsonAsync(ReadRaw(root, "messages"), ReadPushOptions(root), cancellationToken)
                     .ConfigureAwait(false),
+                LineMcpOutboxKind.LiffCreate => await CreateLiffAppAsync(root, cancellationToken).ConfigureAwait(false),
+                LineMcpOutboxKind.LiffDelete => await LineMcpLiff
+                    .DeleteAsync(_liff, ReadString(root, "liffId"), _logger, cancellationToken)
+                    .ConfigureAwait(false),
                 _ => await ReplaceRichMenuAsync(root, cancellationToken).ConfigureAwait(false),
             };
         }
@@ -245,6 +264,29 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
         return messages.IsFailure
             ? messages.ToResult()
             : await _messaging.MulticastAsync(userIds, messages.GetValueOrThrow(), ReadPushOptions(root), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 建立 LIFF 應用程式。
+    /// Creates a LIFF app.
+    /// </summary>
+    /// <param name="root">內容的根物件。The payload's root object.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>建立的結果。The creation's result.</returns>
+    private async Task<Result> CreateLiffAppAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        var app = LineMcpLiff.ParseCreate(
+            ReadString(root, "viewType"),
+            ReadString(root, "url"),
+            ReadString(root, "description"),
+            ReadString(root, "botPrompt"));
+        if (app.IsFailure)
+        {
+            return app.ToResult();
+        }
+
+        var created = await LineMcpLiff.CreateAsync(_liff, app.GetValueOrThrow(), _logger, cancellationToken).ConfigureAwait(false);
+        return created.ToResult();
     }
 
     /// <summary>

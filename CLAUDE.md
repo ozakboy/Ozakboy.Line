@@ -134,7 +134,7 @@ Ozakboy.Line/
 - **MCP 待發項目狀態只往前走**:`PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected` / `Canceled`,已送出的不得回到待審(能回到待審 = 同一則訊息可能被核准兩次)。
 - **MCP 金鑰閘驗證失敗一律回 404**,不得改成 401/403(那等於確認端點存在);未設 `ApiKey` = 功能關閉、整個子樹 404;比對必須用 `CryptographicOperations.FixedTimeEquals`。
 - **MCP 工具名稱(`line_*`)是契約**:外部 AI 的提示詞與流程綁在上面,發佈後不改名。要表達新能力請加新工具。0.3.0 新增的七個——`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`、`line_list_liff_apps`、`line_create_liff_app`、`line_delete_liff_app`——同樣適用。
-- **MCP 的 LIFF 工具與統計單位**(0.3.0):LIFF 工具在 `ILineLiffClient` 未註冊(宿主沒呼叫 `AddLineLiff`)時**照樣掛上並回 `line.not_configured`**,不是消失;建立 / 刪除 LIFF 是帳號設定變更不是訊息送出,**不進待發佇列**、只寫一行 `ILogger`(這與 `line_replace_rich_menu` 不同,後者走待審);四個查詢類新工具唯讀、不計每日額度,`line_get_delivery_stats` 四種管道都要回、`unready` 如實回報(`success` 為 null 不是 0);三個送出工具的 `customAggregationUnit` 在**提出時**就檢查,並存在待發項目的 `PayloadJson`(欄位 `customAggregationUnit`,舊項目沒有此欄位照常核准)、核准時才帶進 `LinePushOptions`。
+- **MCP 的 LIFF 工具與統計單位**(0.3.0):LIFF 工具在 `ILineLiffClient` 未註冊(宿主沒呼叫 `AddLineLiff`)時**照樣掛上並回 `line.not_configured`**,不是消失;建立 / 刪除 LIFF 是帳號設定變更,與 `line_replace_rich_menu` 一樣**走待審佇列**(`LineMcpOutboxKind.LiffCreate = 4` / `LiffDelete = 5`,接在既有數值之後以相容 0.2.0 的 JSON 檔;payload 存 viewType / url / description / botPrompt 或 liffId)——Review 模式只排佇列、核准時由 `LineMcpOutboxService` 依 kind 呼叫 `ILineLiffClient`,Direct 模式**先執行再記錄**,每日建立上限照常以 CreatedAt 計數,執行時寫一行 `ILogger`;核准時 `ILineLiffClient` 未註冊 → 項目標 `Failed`(`line.not_configured`);`line_list_liff_apps` 是唯讀直接查;四個查詢類新工具唯讀、不計每日額度,`line_get_delivery_stats` 四種管道都要回、`unready` 如實回報(`success` 為 null 不是 0);三個送出工具的 `customAggregationUnit` 在**提出時**就檢查,並存在待發項目的 `PayloadJson`(欄位 `customAggregationUnit`,舊項目沒有此欄位照常核准)、核准時才帶進 `LinePushOptions`。
 
 ## 本專案特有規則(踩坑紀錄)
 
