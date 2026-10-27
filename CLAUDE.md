@@ -39,7 +39,7 @@ Ozakboy.Line/
   src/Ozakboy.Line/                     核心(PackageId=Ozakboy.Line)
     Line{Endpoints,ErrorCodes,ErrorDataKeys,MessagingLimits,Json,Http,ApiErrorMapper}.cs
                   (Endpoints / ErrorCodes / MessagingLimits 另拆 partial:.Channel / .Liff / .Stats / .RichMenuBatch /
-                  .Batch / .Messages / .Postback / .Webhook,依功能分檔)
+                  .Batch / .Messages / .Postback / .Webhook / .Flex,依功能分檔)
     LineUserProfile.cs  LineHttpClientNames.cs  LineServiceCollectionExtensions.cs
     LineChannel{Names,Registrations}.cs(多 channel:具名登記與「同名取代」的共用工具,0.4.0)
     Login/        LineLoginOptions / LineLoginClient / LineIdTokenValidator / LinePkce / 回應模型
@@ -54,6 +54,12 @@ Ozakboy.Line/
                   + LineTextEmoji / LineTextSubstitution
         Template/ LineTemplate / Buttons / Confirm / Carousel(+Column)/ ImageCarousel(+Column)
         Imagemap/ LineImagemapAction / ImagemapUri / ImagemapMessage / LineImagemapArea / LineImagemapVideo
+        Flex/     FlexContainer(FlexBubble / FlexCarousel / RawFlexContainer)/ FlexComponent(FlexBox / FlexText(+FlexSpan)/
+                  FlexImage / FlexVideo / FlexIcon / FlexButton / FlexSeparator / FlexFiller / RawFlexComponent)
+                  + FlexLinearGradient / FlexBubbleStyles / FlexBlockStyle + 常數類(FlexSize / FlexSpacing / FlexColor /
+                  FlexAspectRatio / FlexLayout / … / FlexBorderWidth / FlexCornerRadius)
+                  + 序列化(FlexJson / FlexJsonConverters)+ 讀回(FlexReader / FlexNotModelledException)
+                  + 驗證(FlexValidator)+ FlexRawScanner(GetRawNodePaths);FlexMessage.cs 在上一層
       Actions/    LineAction 與九種具體動作(Uri / Message / Postback / DatetimePicker / Camera / CameraRoll /
                 Location / Clipboard / RichMenuSwitch)+ RawAction + 轉換器
       RichMenu/   LineRichMenu / Size / Bounds / Area / Info / Alias / ReplaceOptions / BatchOperation / BatchProgress
@@ -86,7 +92,7 @@ Ozakboy.Line/
     LineMcpAggregationUnit.cs(送出工具的統計單位檢查與選項轉換)
     LineMcpClients.cs(依 LineMcpOptions.ChannelName 取 Messaging / LIFF 用戶端)
     LineMcpUnavailableMessagingClient.cs(channel 不存在時的 DispatchProxy 替身,每個方法回 not_configured)
-    Tools/        Line{Info,Send,Outbox,RichMenu,Liff,AutoReply,Template}Tools
+    Tools/        Line{Info,Send,Outbox,RichMenu,Liff,AutoReply,Template,Flex}Tools
   tests/Ozakboy.Line.Tests/             核心測試(離線;Samples/*.json 是依官方文件整理的回應樣本,source 欄位註明端點;
                                         TestSupport/RecordingLineMessagingClient.cs 是 DispatchProxy 的記錄用假用戶端)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
@@ -153,6 +159,11 @@ Ozakboy.Line/
 - **`ImagemapMessage.ForSingleImage` 是實驗性**(0.4.0):位址尾端補 `?`(已含 query 補 `&`,尾端已是 `?` / `&` 不補)、含 `#` 拒絕;動作範圍換成整張圖(複製一份,不改傳入物件)。它依賴 **LINE 會在底圖位址後接 `/{width}`、且伺服器忽略多出的 query**,官方沒有保證 —— 不要把它寫成穩定契約的賣點。
 - **自動回覆與 MCP 的 channel 是契約**(0.4.0):`LineAutoReplyRule.ChannelName` 為 null 或空 = **所有 channel**(含舊資料缺省);比對前只留下 `ChannelName` 空或等於目前 channel 的規則(序數比較),挑選順序契約不變;`HandleAsync(evt)` = 預設 channel,`HandleAsync(evt, channelName)` 未註冊的名稱回 `line.not_configured`(預設介面實作只認預設 channel,不把別的 channel 當預設處理);服務的 `{{displayName}}` 查詢走同一個 channel 的用戶端。MCP 的 `LineMcpOptions.ChannelName`(預設空字串)決定所有工具與 `LineMcpOutboxService` 用哪個 channel;**預設 channel 優先用直接註冊的 `ILineMessagingClient`**(沒有工廠 / 替換了用戶端的舊宿主照常可用),**具名 channel 一律走工廠,沒有工廠或名稱未註冊就是 `line.not_configured` —— 絕不退回別的帳號**(送出類工具拿錯帳號比送不出去嚴重得多);送出類工具與 `line_replace_rich_menu` 在**提出時**就擋,不排進佇列。`line_get_bot_info` 輸出含 `channelName`。
 
+- **Flex 讀回的 Raw 退回規則是契約**(0.5.0):`FlexMessage.Parse` 讀回時,節點含有未建模欄位、值的型別不符或 `type` 未知,就**整個節點**退回 `RawFlexComponent` / `RawFlexContainer` 原樣保存(只丟 `FlexNotModelledException` 讓分派點接住),不是丟掉那個欄位、也不是讓讀取失敗;讀回再寫出必須與輸入一致(`FlexRoundTripTests`)。失敗的只有不合法 JSON、根不是帶 `type` 的物件、元件不是物件。棄用的 `spacer` 刻意不建模,讀回成 `RawFlexComponent`。
+- **Flex 的值一律 `string` + 靜態常數類,不用 enum**(0.5.0):`3xl`、`20px`、`50%`、`1.91:1`、`#RRGGBBAA`、`90deg` 裝不進列舉,而且列舉會讓 LINE 日後新增的每個值都得發版。新增欄位時維持這個做法,關鍵字常數放對應的常數類。**新增具體的 Flex 元件 / 容器子類時必須掛 `[JsonConverter(typeof(FlexComponentJsonConverterFactory))]` / `FlexContainerJsonConverterFactory`**(理由同下方 `[JsonConverter]` 踩坑條目,`FlexConcreteTypeSerializationTests` 以反射把關)。
+- **`line.validation.invalid_flex` 的本地規則與「Raw 不驗」是契約**(0.5.0):`FlexMessage.Validate()` 走訪強型別節點樹,失敗訊息帶版面路徑(`contents[2].body.contents[0].url`,根為空),一個請求都不送。規則清單:輪播 1~12 個氣泡;氣泡至少有 header / hero / body / footer 其中之一、`size` 七個關鍵字;hero 只能 image / box / video;**video 只能當 hero**、`altContent` 必填且為 image / box、`Action` 為 UriAction;baseline 方塊只能放 text / icon / filler;`layout` 必填且三值之一;text 的 `Text` 與 `Contents` 恰好擇一;`Flex` / `MaxLines` ≥ 0;各關鍵字欄位的允許值;margin / spacing / padding / offset / cornerRadius / borderWidth 為關鍵字或 `{n}px`(padding / offset / width / height / maxWidth / maxHeight 另收 `{n}%`,width / height 系列不收關鍵字);色碼 `#RRGGBB(AA)`;長寬比 `w:h`;漸層角度 `{n}deg`、`centerPosition` 為百分比;image / icon / video 位址 https 且 ≤ 2000;所有動作走 `LineAction.Validate(MaxActionLabelLength, path)`(失敗是 `invalid_action`,不是 `invalid_flex`);版面 JSON 大小氣泡 ≤ 30 KB、輪播 ≤ 50 KB(`MaxFlexBubbleBytes` / `MaxFlexCarouselBytes`,以**未跳脫**的 UTF-8 位元組量,寧可放行)。**`RawFlexContainer` / `RawFlexComponent` / `RawAction` 與原樣 JSON 路徑(`FlexMessage.Contents`)不驗**(逃生口),只套用整體大小上限;含 video 的氣泡能否放進輪播刻意不擋。**規則寧可寬鬆:本地誤擋合法訊息時,呼叫端除了改走 Raw 別無他法,所以規則過嚴就是 bug,修法是放寬。** 其中信心較低、日後可能要調整的:大小上限(30 / 50 KB 為依記憶)、padding / offset 接受 `%`、baseline 只允許 text / icon / filler、動作 label 上限沿用 20。
+- **`line_validate_flex` 是 MCP 工具名契約**(0.5.0):唯讀、不送出、不進待審佇列、不計每日額度;參數 `contentsJson`(bubble / carousel,或整則 `type=flex` 訊息,取其 `contents` 與 `altText`)與選填 `altText`;回 `parsed` / `valid` / `fullyTyped` / `rawNodes` / `code` / `error` / `sizeBytes` / `sizeLimitBytes`。不可合法解析時 `ok` 仍為 `true`(工具有跑完),`parsed=false` 並帶 `invalid_json`。送出類工具與 `line_render_template` **不**自動解析 flex,維持當 raw JSON 送。
+
 ## 本專案特有規則(踩坑紀錄)
 
 - **`[JsonConverter]` 掛在基底類別不會被衍生型別繼承**:`JsonSerializer.Serialize(new TextMessage("x"))` 的型別參數推導成 `TextMessage`,沒有轉換器就退回反射,寫出 PascalCase 的錯誤 JSON 而且沒有任何錯誤(只有以 `LineMessage` / `LineAction` 為型別參數才對)。0.3.0 起**每個具體的 `LineMessage` / `LineAction` 子類都掛 `[JsonConverter(typeof(LineMessageJsonConverterFactory))]` / `LineActionJsonConverterFactory`**;**新增子類時必須一併掛上**,`LineConcreteTypeSerializationTests` 會逐型別比對與基底型別序列化的輸出。
@@ -181,5 +192,8 @@ Ozakboy.Line/
 - **自動回覆的 `{{displayName}}` 只在規則真的用到時才查個人檔案**,查不到以空字串代入而不讓整個回覆失敗:為了一個名字讓歡迎訊息整個發不出去,是把小事變成大事。
 - **測試專案要零警告,而且不准用 `NoWarn` / `#pragma`**:CA1861 —— 常數陣列當引數(連單元素的 `new[] { "x" }` 也算)一律抽成 `static readonly` 欄位,或改成 `string.Join` 比對;MSTEST0032 —— 常數對常數的斷言(`Assert.AreEqual("line.x", LineErrorCodes.X)`)改成斷言執行期取得的值(`result.Error.Code`);CS8602 —— `Result.Error` 是可為 null 的,先 `Assert.IsNotNull(result.Error)` 再取 `.Code`。
 - **`RecordingLineMessagingClient`(`tests/Ozakboy.Line.Tests/TestSupport/`)是 `DispatchProxy` 實作的 `ILineMessagingClient`**:只認得 `ReplyAsync` / `ReplyTextAsync` / `PushAsync` / `PushTextAsync` 並記錄,其他任何成員(**包括 `ChannelName`**)擲 `NotSupportedException`,所以處理常式測試別讀 `context.Messaging.ChannelName`。它不隨介面長成員而需維護;AspNetCore 測試專案以**單檔** `<Compile Include=… Link=…>` 連結(只有這一個檔,不像 `FakeLineMessagingClient*.cs` 要萬用字元)。多 channel 測試要換掉某個 channel 的用戶端時,在 `AddLineMessaging(name, …)` 之後 `AddKeyedSingleton<ILineMessagingClient>(name, fake)`(最後註冊的贏,工廠走 keyed 解析)。MCP 的 `LineMcpUnavailableMessagingClient` 同樣是 `DispatchProxy`,所以不能 `sealed`(CA1852 用逐點 `#pragma` 處理,理由寫在旁邊)。
+- **`FlexNotModelledException` 是內部控制流程例外,所以用逐點 `#pragma warning disable CA1032, CA1064`**:它只在 `FlexReader` 的分派點被接住、永遠不到達呼叫端,不需要標準建構子(CA1032),也不該 public(CA1064 要求例外 public)。不全域關這兩條,理由與 `CA2227` / `CA1031` 相同。
+- **Flex 讀回時,版面裡的動作一律是 `RawAction`**(只有 `FlexVideo.Action` 例外,它型別為 `UriAction` 所以用 `ReadUriAction` 讀,讀不成就整個 video 節點退回 Raw)。後果:從 Simulator 讀回的版面,動作不經 label ≤ 20 等本地檢查;`GetRawNodePaths()` 也不把動作算進去。要強型別動作得自己組。
+- **`FlexValidator` 的路徑根是容器自己**:輪播第三個氣泡的內文第一個元件是 `contents[2].body.contents[0]`,氣泡根的錯誤路徑為空字串(訊息顯示「(根)」)。`FlexRawScanner` 用同一套格式,改一邊要改另一邊。大小量測用 `JavaScriptEncoder.UnsafeRelaxedJsonEscaping`:預設編碼器會把中文寫成 `\uXXXX`(6 位元組),量出來是未跳脫長度的兩倍,會誤擋。
 - 分析器 `NoWarn`(在核心 csproj,每條都附了中文理由):`CA1054` / `CA1055` / `CA1056`(URI 維持 string,避免 `System.Uri` 正規化改掉 LINE 給的位址,尤其 redirect_uri 必須逐字相同)、`CA1716`(`to` 是 LINE 自己的欄位名)、`CA1819`(`LineContent.Bytes`)、`CA2000`(請求的擁有權轉移給 `LineHttp`)。`CA2227` 與 `CA1031` 用逐點 `#pragma` 處理,不全域關。
 - MCP 專案的 `NoWarn`:`CA1054` / `CA1055` / `CA1056`(理由同核心 —— 位址一律維持 string,MCP 工具的參數更是如此,那些值由外部 AI 提供,原樣傳遞才對得起 LINE 的逐字比對)、`CA1812`(兩個中介層由 `UseMiddleware<T>` 以反射具現化,分析器看不出來)。**`CA1716` 不在名單上**:MCP 專案裡的 `to` 是自己取的參數名,直接改名(`CountCreatedBetweenAsync` 的 `until`)而不是關規則。

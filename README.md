@@ -203,6 +203,83 @@ Every message can also carry a `Sender` (`name`, `iconUrl`) that overrides the a
 
 ---
 
+## Flex Message
+
+Flex messages can be built in C# or read back from the JSON that LINE's Flex Message Simulator produces; both end up as the same typed model, and both are checked before anything is sent.
+
+```csharp
+using Ozakboy.Line.Messaging.Actions;
+using Ozakboy.Line.Messaging.Messages.Flex;
+
+var card = new FlexBubble
+{
+    Size = FlexBubbleSize.Mega,
+    Hero = new FlexImage("https://example.com/ramen.jpg")
+    {
+        Size = FlexSize.Full,
+        AspectRatio = FlexAspectRatio.Of(20, 13),
+        AspectMode = FlexAspectMode.Cover,
+    },
+    Body = new FlexBox
+    {
+        Layout = FlexLayout.Vertical,
+        Spacing = FlexSpacing.Sm,
+        Contents =
+        [
+            new FlexText("Ramen Ichiban") { Weight = FlexWeight.Bold, Size = FlexSize.Xl },
+            new FlexBox
+            {
+                Layout = FlexLayout.Baseline,
+                Margin = FlexSpacing.Md,
+                Contents =
+                [
+                    new FlexIcon("https://example.com/star.png") { Size = FlexSize.Sm },
+                    new FlexText("4.5") { Size = FlexSize.Sm, Color = FlexColor.Rgb(0x99, 0x99, 0x99), Margin = FlexSpacing.Md, Flex = 0 },
+                ],
+            },
+        ],
+    },
+    Footer = new FlexBox
+    {
+        Layout = FlexLayout.Vertical,
+        Contents = [new FlexButton(new UriAction("https://example.com/book") { Label = "Book a table" }) { Style = FlexButtonStyle.Primary }],
+    },
+};
+
+var message = new FlexMessage("Ramen Ichiban, rated 4.5", card);
+await line.PushAsync(userId, [message]);   // Validate() runs first; a broken layout sends nothing
+```
+
+Every valued field is a plain `string` — `"3xl"`, `"20px"`, `"50%"`, `"1.91:1"`, `"#112233CC"` — with the keywords and factories in static classes (`FlexSize`, `FlexSpacing`, `FlexColor`, `FlexAspectRatio`, `FlexBorderWidth`, `FlexCornerRadius`, `FlexLayout`, …). An enum would not hold those values, and every value LINE adds later would need a package release.
+
+**Reading JSON from the Simulator.**
+
+```csharp
+var read = FlexMessage.Parse("altText", jsonFromSimulator);   // bubble or carousel
+var message = read.GetValueOrThrow();                          // message.Container is the typed tree
+var raw = message.Container!.GetRawNodePaths();                // where the model gave up, e.g. "contents[1].body.contents[0]"
+```
+
+A node that carries a field the model does not know, has the wrong kind of value, or has an unknown `type` (the deprecated `spacer` among them) is kept **as a whole** in a `RawFlexComponent` / `RawFlexContainer` and written back exactly as it came, so reading and writing back loses nothing. Actions inside a layout read back as `RawAction`. `FlexMessage.FromJson` and the `JsonElement` constructor stay as they were: the JSON goes out untouched.
+
+**What `Validate()` checks** (`line.validation.invalid_flex`, the message names the path, such as `contents[2].body.contents[0].url`; nothing is sent):
+
+| Area | Rule |
+| --- | --- |
+| Carousel | 1 to 12 bubbles |
+| Bubble | at least one of header / hero / body / footer; `size` one of the seven keywords |
+| Hero and video | hero is an image, a box or a video; a video only as a hero, with an image or box `altContent` and a URI action |
+| Box | `layout` present and horizontal / vertical / baseline; a baseline box holds only text, icon and filler; `flex` not negative |
+| Text | `text` or `contents` (spans), exactly one; `maxLines` not negative |
+| Values | keywords for size / align / gravity / weight / style / decoration / position / aspect mode / button height and style / justify / align items; margin, spacing, padding, offset, width, height, corner radius and border width take a keyword, `{n}px` or (width, height, padding, offset) `{n}%`; colours `#RRGGBB` or `#RRGGBBAA`; aspect ratio `w:h`; gradient angle `{n}deg` |
+| Media | image, icon and video URLs are https, at most 2000 characters |
+| Actions | each one through the usual action check, label at most 20 |
+| Size | layout JSON at most 30 KB (a carousel 50 KB), in unescaped UTF-8 bytes |
+
+**`RawFlexComponent`, `RawFlexContainer`, `RawAction` and the verbatim-JSON path are not checked** (beyond the overall size): they are the way out when LINE adds something the model has not caught up with, so a layout read from the Simulator is validated only as far as the model reaches, and `GetRawNodePaths()` (or the MCP tool `line_validate_flex`) tells you where that stops. Two things are deliberately left to LINE: whether a bubble with a video may sit in a carousel, and any limit this package does not know about. A message template whose rendered output contains a `flex` message stays as it is — rendering does not parse it — but `FlexMessage.Parse` is there to check one.
+
+---
+
 ## Message templates
 
 A reusable set of LINE messages that can carry variables. What is stored is **the JSON of a message array** rather than a piece of plain text, so images, Flex layouts and quick replies all fit into a template — and changing the wording never means changing code.
@@ -615,6 +692,7 @@ Every limit below fails on your machine with a named code and **no request is se
 | `postback` data | at most 300 characters | `invalid_action` |
 | `uri` action | scheme from an allow-list | `invalid_action` |
 | Rich menu area actions | each one checked, the area named in the message | `invalid_action` |
+| Flex layout | structure, value formats, URLs and size, the path named in the message; Raw nodes are not checked | `invalid_flex` |
 | Template and imagemap shape | see above | `invalid_template` / `invalid_imagemap` |
 | Statistics unit | one per request, 30 letters, digits or underscores | `invalid_aggregation_unit` |
 | Statistics range | `from` ≤ `to`, at most 30 days | `invalid_date_range` |
@@ -683,11 +761,14 @@ The tools:
 | Rich menus | `line_list_rich_menus` · `line_get_default_rich_menu` · `line_list_rich_menu_aliases` · `line_validate_rich_menu` · `line_replace_rich_menu` (reviewed) |
 | Auto reply | `line_list_auto_replies` · `line_upsert_auto_reply` · `line_delete_auto_reply` · `line_test_auto_reply` |
 | Templates | `line_list_templates` · `line_get_template` · `line_upsert_template` · `line_delete_template` · `line_render_template` |
+| Flex | `line_validate_flex` |
 | LIFF | `line_list_liff_apps` · `line_create_liff_app` (reviewed) · `line_delete_liff_app` (reviewed) |
 
 The rule and template tools **skip the review queue**, because they send nothing by themselves: a broken rule answers wrongly rather than reaching out to everyone uninvited, and undoing it is one more upsert. To forbid them outright there are `AllowRuleEdits`, `AllowTemplateEdits` and `AllowRichMenuChanges`. Where the host has not called `AddLineTemplates` or `AddLineAutoReply`, those tools are still mounted and answer that the feature is off — which says more than their absence would.
 
-The four new reading tools (`line_get_webhook_info`, `line_test_webhook`, `line_get_delivery_stats`, `line_get_message_event_insight`) change nothing and do not count against the daily cap. `line_get_delivery_stats` takes one `yyyy-MM-dd` date and answers for reply, push, multicast and broadcast at once; a channel whose figures are not ready is reported as `unready` with a null count, not zero. The LIFF tools need `ILineLiffClient`, so they answer `line.not_configured` where the host has not called `AddLineLiff`. **Creating and deleting a LIFF app go through the review queue**, like `line_replace_rich_menu`: in `Review` mode they only queue the plan (outbox kinds `LiffCreate` and `LiffDelete`), a person approves it, and only then does `ILineMcpOutboxService.ApproveAndSendAsync` call `ILineLiffClient` — deleting an app breaks every link that points at it, which an AI must not decide alone. `Direct` mode executes first and records afterwards, an execution writes a log line, and approving one where `AddLineLiff` was never called marks the item `Failed` as `line.not_configured`. `line_list_liff_apps` stays a direct, read-only query. The three sending tools take an optional `customAggregationUnit`, checked when proposed and stored with the outbox item, so the unit is applied at approval time.
+`line_validate_flex` is read-only too: give it a Flex layout (a bubble, a carousel or a whole `flex` message) and it says whether it parses into the typed model, which nodes stayed Raw and so are not validated, the local validation result with the layout path, and the JSON size against its limit — a way for an outside AI to check a layout before queueing it. It sends nothing and counts against no daily cap.
+
+The four 0.3.0 reading tools (`line_get_webhook_info`, `line_test_webhook`, `line_get_delivery_stats`, `line_get_message_event_insight`) change nothing and do not count against the daily cap. `line_get_delivery_stats` takes one `yyyy-MM-dd` date and answers for reply, push, multicast and broadcast at once; a channel whose figures are not ready is reported as `unready` with a null count, not zero. The LIFF tools need `ILineLiffClient`, so they answer `line.not_configured` where the host has not called `AddLineLiff`. **Creating and deleting a LIFF app go through the review queue**, like `line_replace_rich_menu`: in `Review` mode they only queue the plan (outbox kinds `LiffCreate` and `LiffDelete`), a person approves it, and only then does `ILineMcpOutboxService.ApproveAndSendAsync` call `ILineLiffClient` — deleting an app breaks every link that points at it, which an AI must not decide alone. `Direct` mode executes first and records afterwards, an execution writes a log line, and approving one where `AddLineLiff` was never called marks the item `Failed` as `line.not_configured`. `line_list_liff_apps` stays a direct, read-only query. The three sending tools take an optional `customAggregationUnit`, checked when proposed and stored with the outbox item, so the unit is applied at approval time.
 
 ---
 
@@ -745,7 +826,7 @@ The four new reading tools (`line_get_webhook_info`, `line_test_webhook`, `line_
 | Account linking and content | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
 | Identity | `ChannelName` (the channel the client is bound to; empty for the default) |
 
-Message types: `TextMessage` (with `Emojis`), `TextV2Message` (with `LineTextSubstitution`), `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
+Message types: `TextMessage` (with `Emojis`), `TextV2Message` (with `LineTextSubstitution`), `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage` (typed layouts in `Ozakboy.Line.Messaging.Messages.Flex`, see above), `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
 
 `ReplaceRichMenuAsync` runs create, upload, set-as-default, repoint-the-alias and delete-the-old-menu as one call. Its failure handling is asymmetric on purpose: **a failed image upload deletes the menu just created**, since a menu without an image is worse than no menu, while **a failed deletion of the old menu is only logged and the call still succeeds**, since the new menu is already live and reporting a failure would have the caller redo it and end up with one menu more.
 
@@ -777,6 +858,20 @@ Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using th
 | `PostbackAction.CreateStoredAsync` · `LinePostbackDataResolver.ResolveAsync` · `LinePostbackDataToken` | Stage long data behind a short token, and turn the token back into data. |
 | `ImagemapMessage.ForSingleImage(url, altText, height, action)` | A single-image imagemap (experimental). |
 
+### Flex messages
+
+| Member | What it does |
+| --- | --- |
+| `FlexBubble` · `FlexCarousel` | The two containers; `FlexCarousel.Contents` holds 1 to 12 bubbles. |
+| `FlexBox` · `FlexText` (+ `FlexSpan`) · `FlexImage` · `FlexVideo` · `FlexIcon` · `FlexButton` · `FlexSeparator` · `FlexFiller` | The components; every valued field is a `string`. |
+| `FlexLinearGradient` · `FlexBubbleStyles` · `FlexBlockStyle` | Box gradients and per-area bubble styles. |
+| `FlexSize` · `FlexSpacing` · `FlexColor` · `FlexAspectRatio` · `FlexBorderWidth` · `FlexCornerRadius` · `FlexLayout` · … | Keyword constants and value factories (`Px`, `Percent`, `Rgb`, `Of`). |
+| `new FlexMessage(altText, container)` · `FlexMessage.Container` | The typed path; `Container` is `null` on the verbatim-JSON path. |
+| `FlexMessage.Parse(altText, json)` | Reads layout JSON into the typed model; anything unknown is kept as Raw. |
+| `FlexContainer.GetRawNodePaths()` | The paths of the nodes kept as `RawFlexComponent` / `RawFlexContainer`. |
+| `RawFlexContainer` · `RawFlexComponent` | The escape hatch; sent as given, not validated. |
+| `FlexMessage.Validate()` | The local check; `line.validation.invalid_flex` with the path. |
+
 ### Templates and auto reply
 
 | Member | What it does |
@@ -801,7 +896,7 @@ Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using th
 | `AddLineMcp(configure, stores?)` | The settings, the outbox, the outbox service, and the named HTTP client used to fetch images. |
 | `AddLineMcpServer(configure, stores?)` | All of the above plus a stateless MCP server carrying just the LINE tools. |
 | `LineMcpOptions.ChannelName` · `LineMcpClients` | Which channel's clients the tools and the outbox service use; a missing channel is `line.not_configured`. |
-| `IMcpServerBuilder.WithLineTools()` | Adds the seven tool sets to an MCP server the host already has. |
+| `IMcpServerBuilder.WithLineTools()` | Adds the eight tool sets to an MCP server the host already has. |
 | `UseLineMcpKeyGate(prefix?)` | The key gate. **Must come before `UseRouting`.** |
 | `UseLineMcpWellKnownNotFound()` | A clean 404 for everything under `/.well-known/`. |
 | `MapLineMcp(prefix?)` | The MCP endpoint, on the same prefix the gate uses. |
@@ -828,7 +923,7 @@ Outbox statuses: `PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected`
 
 ### Error codes
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.validation.invalid_flex` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
 
 These are a public contract and do not change once published.
 

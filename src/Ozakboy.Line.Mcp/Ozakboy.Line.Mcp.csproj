@@ -11,7 +11,7 @@
 
     <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
-    <PackageReleaseNotes>0.4.0: one channel per MCP endpoint. New: LineMcpOptions.ChannelName (empty, the default channel, unless set) picks the official account whose Messaging and LIFF clients every tool and the outbox service use, through LineMcpClients; the default channel prefers a directly registered client, so a host without a factory keeps working. A channel that is not registered makes every tool answer line.not_configured, send nothing and never fall back to another account, and the sending tools refuse at proposal time. line_get_bot_info reports channelName; line_upsert_auto_reply and line_test_auto_reply take an optional channelName. No tool was renamed or removed. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.5.0: a Flex self-check tool. New: line_validate_flex, read-only, takes a Flex layout JSON (a bubble, a carousel or a whole flex message) and an optional altText and answers whether it parses into the typed model, which nodes were kept verbatim as Raw and so are not validated, the local validation result (line.validation.invalid_flex with the layout path) and the JSON size against its limit, so an outside AI can check a layout before queueing it; it sends nothing and counts against no daily cap. Existing tool names, the review queue and the key gate are unchanged. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 

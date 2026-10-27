@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
+A typed model for Flex messages: build a layout in C#, read the JSON from LINE's Flex Message Simulator back into the
+same model, and have it checked before anything is sent. Nodes the model does not know are never lost. No existing
+error code, category or method signature changed; every new member is additive, and the verbatim-JSON path
+(`FlexMessage.FromJson`) works exactly as before.
+
+Flex Message 的強型別模型:用 C# 組版面、把 LINE Flex Message Simulator 的 JSON 讀回同一套模型,並在送出之前檢查。
+模型不認得的節點絕不會遺失。既有的錯誤代碼、分類與方法簽章都沒有變;所有新成員都是新增的,原樣 JSON 的路徑
+(`FlexMessage.FromJson`)與先前完全相同。
+
+### Added
+
+- **`Ozakboy.Line` — the Flex model.** The `Ozakboy.Line.Messaging.Messages.Flex` namespace: containers
+  `FlexBubble` and `FlexCarousel`; components `FlexBox`, `FlexText` (with `FlexSpan`), `FlexImage`, `FlexVideo`,
+  `FlexIcon`, `FlexButton`, `FlexSeparator` and `FlexFiller`; `FlexLinearGradient`, `FlexBubbleStyles` and
+  `FlexBlockStyle`; and the escape hatches `RawFlexContainer` / `RawFlexComponent`. Every valued field (size,
+  spacing, colour, aspect ratio, border width, corner radius …) is a plain `string`, with the keywords and value
+  factories in static classes — `FlexSize.Xl`, `FlexSize.Px(20)`, `FlexSpacing.Md`, `FlexColor.Rgb(0x11, 0x22, 0x33)`,
+  `FlexAspectRatio.Of(20, 13)` and so on. `new FlexMessage(altText, container)` and `FlexMessage.Container` join the
+  existing `JsonElement` constructor and `Contents`.
+  **`Ozakboy.Line` — Flex 模型。** `Ozakboy.Line.Messaging.Messages.Flex` 命名空間:容器 `FlexBubble` 與
+  `FlexCarousel`;元件 `FlexBox`、`FlexText`(含 `FlexSpan`)、`FlexImage`、`FlexVideo`、`FlexIcon`、`FlexButton`、
+  `FlexSeparator` 與 `FlexFiller`;`FlexLinearGradient`、`FlexBubbleStyles` 與 `FlexBlockStyle`;以及逃生口
+  `RawFlexContainer` / `RawFlexComponent`。所有帶值的欄位(尺寸、間距、顏色、長寬比、框線寬度、圓角 …)一律是
+  `string`,關鍵字與量值工廠放在靜態類別 —— `FlexSize.Xl`、`FlexSize.Px(20)`、`FlexSpacing.Md`、
+  `FlexColor.Rgb(0x11, 0x22, 0x33)`、`FlexAspectRatio.Of(20, 13)` 等。`new FlexMessage(altText, container)` 與
+  `FlexMessage.Container` 加進既有的 `JsonElement` 建構子與 `Contents` 旁邊。
+
+- **`Ozakboy.Line` — `FlexMessage.Parse`.** Reads layout JSON — typically pasted from the Flex Message Simulator —
+  into the typed model. A node that carries a field the model does not know, has the wrong kind of value, or has an
+  unknown `type` is kept **as a whole** in a `RawFlexComponent` / `RawFlexContainer` and written back exactly as it
+  came, so reading and writing back loses nothing and a LINE field added next year does not vanish from an old
+  package. `FlexContainer.GetRawNodePaths()` lists those nodes, in the same path format validation uses. Actions in
+  the layout are read as `RawAction`.
+  **`Ozakboy.Line` — `FlexMessage.Parse`。** 把版面 JSON(通常是從 Flex Message Simulator 貼來的)讀成強型別模型。
+  節點含有模型不認得的欄位、值的型別不符或 `type` 未知時,**整個節點**以 `RawFlexComponent` /
+  `RawFlexContainer` 保存並原樣寫回,所以讀回再寫出不掉資料,明年 LINE 新增的欄位也不會在舊版套件裡消失。
+  `FlexContainer.GetRawNodePaths()` 以驗證用的路徑格式列出這些節點。版面裡的動作讀回時是 `RawAction`。
+
+- **`Ozakboy.Line` — Flex validation.** `FlexMessage.Validate()` now checks a typed layout and the client calls it
+  before every send: a carousel holds 1 to 12 bubbles; a bubble has at least one of header, hero, body and footer;
+  the hero is an image, a box or a video; a video appears only as a hero, with an image or box `altContent` and a
+  URI action; a baseline box holds only text, icon and filler; `layout` is present and known; `text` and `contents`
+  are exclusive; `flex` and `maxLines` are not negative; keyword fields (size, align, gravity, weight, style,
+  decoration, position, aspect mode, button height and style, justify, align items …) take their allowed values;
+  margins, spacings, paddings, offsets, widths, heights, corner radii and border widths take a keyword, `{n}px` or
+  (where it applies) `{n}%`; colours are `#RRGGBB` or `#RRGGBBAA`; aspect ratios are `w:h`; gradient angles are
+  `{n}deg`; image, icon and video URLs are https and at most 2000 characters; every action goes through the existing
+  action check with the 20-character label limit; and the layout JSON stays within its size limit. A failure is the
+  new `line.validation.invalid_flex` (`LineErrorCodes.InvalidFlex`), its message carries the layout path such as
+  `contents[2].body.contents[0].url`, and **no request is sent**. The limits are in `LineMessagingLimits`
+  (`MaxFlexCarouselBubbles`, `MinFlexCarouselBubbles`, `MaxFlexBubbleBytes`, `MaxFlexCarouselBytes`).
+  **`Ozakboy.Line` — Flex 驗證。** `FlexMessage.Validate()` 現在會檢查強型別版面,用戶端每次送出前都會呼叫:
+  輪播 1~12 個氣泡;氣泡至少有 header、hero、body、footer 其中之一;hero 是 image、box 或 video;video 只能當
+  hero,且 `altContent` 是 image 或 box、動作是 URI 動作;baseline 方塊只能放 text、icon、filler;`layout` 必填且
+  合法;`text` 與 `contents` 二選一;`flex`、`maxLines` 不得為負;關鍵字欄位(size、align、gravity、weight、style、
+  decoration、position、aspectMode、按鈕 height / style、justifyContent、alignItems …)只收允許的值;margin、
+  spacing、padding、offset、width、height、cornerRadius、borderWidth 收關鍵字、`{n}px`,或(適用時)`{n}%`;
+  顏色是 `#RRGGBB` 或 `#RRGGBBAA`;長寬比是 `w:h`;漸層角度是 `{n}deg`;image、icon、video 的位址是 https 且不超過
+  2000 字;每個動作走既有的動作檢查,label 上限 20;版面 JSON 不超過大小上限。失敗是新的
+  `line.validation.invalid_flex`(`LineErrorCodes.InvalidFlex`),訊息帶版面路徑(例如
+  `contents[2].body.contents[0].url`),而且**一個請求都不送**。上限放在 `LineMessagingLimits`
+  (`MaxFlexCarouselBubbles`、`MinFlexCarouselBubbles`、`MaxFlexBubbleBytes`、`MaxFlexCarouselBytes`)。
+
+- **`Ozakboy.Line.Mcp` — `line_validate_flex`.** A read-only tool that takes a Flex layout JSON (a bubble, a
+  carousel, or a whole `type=flex` message) and an optional `altText`, and answers whether it parses into the typed
+  model, which nodes were kept as Raw (and so are not validated), the local validation result, and the JSON size
+  against its limit — so an outside AI can check a layout before queueing it. It sends nothing, skips the review
+  queue and counts against no daily cap.
+  **`Ozakboy.Line.Mcp` — `line_validate_flex`。** 唯讀工具,收 Flex 版面 JSON(bubble、carousel,或整則
+  `type=flex` 訊息)與選填的 `altText`,回答能否解析為強型別、哪些節點被保留為 Raw(因此不被驗證)、本地驗證
+  結果,以及 JSON 大小與其上限 —— 讓外部 AI 在排進佇列之前先自檢。它不送出任何東西、不進待審佇列、不計每日額度。
+
+- **New error code.** `line.validation.invalid_flex`. Existing codes are untouched.
+  **新錯誤代碼。** `line.validation.invalid_flex`。既有代碼不動。
+
+### Changed
+
+- `FlexMessage.Validate()` on the verbatim-JSON path (`FromJson` / the `JsonElement` constructor) now also applies the
+  JSON size limit. Everything else about that path — no structural check, sent as given — is unchanged.
+  原樣 JSON 路徑(`FromJson` / `JsonElement` 建構子)的 `FlexMessage.Validate()` 現在也套用 JSON 大小上限;
+  該路徑的其他行為(不檢查結構、原樣送出)不變。
+
+### Notes
+
+- **Raw is the way out, and it is not validated.** `RawFlexContainer`, `RawFlexComponent`, `RawAction` and the
+  verbatim-JSON path are not checked beyond the overall size. Reading JSON back never fails on something unknown:
+  the whole node is kept as Raw instead, which is also why a layout read from the Simulator validates only as far as
+  the model reaches — `GetRawNodePaths()` and `line_validate_flex` say where that stops. The deprecated `spacer` is
+  deliberately not modelled and reads back as `RawFlexComponent`.
+  **Raw 是出路,而且不驗。** `RawFlexContainer`、`RawFlexComponent`、`RawAction` 與原樣 JSON 路徑除了整體大小外都不
+  檢查。讀回 JSON 絕不因為遇到不認得的東西而失敗:整個節點改以 Raw 保存,這也表示從 Simulator 讀回的版面只驗到
+  模型涵蓋的範圍 —— `GetRawNodePaths()` 與 `line_validate_flex` 會告訴你在哪裡中斷。已廢止的 `spacer` 刻意不建模,
+  讀回時是 `RawFlexComponent`。
+
+- **Values are strings, not enums.** `3xl`, `20px`, `50%`, `1.91:1`, `#RRGGBBAA` and `90deg` do not fit an
+  enumeration, and an enum would turn every value LINE adds later into a package release. The static classes give
+  the keywords names; validation catches a misspelling before LINE does.
+  **值是字串,不是列舉。** `3xl`、`20px`、`50%`、`1.91:1`、`#RRGGBBAA` 與 `90deg` 裝不進列舉,而且列舉會讓 LINE
+  日後新增的每個值都得等套件發版。靜態類別替關鍵字取了名字;拼錯會在 LINE 之前被驗證擋下。
+
+- **Limits that are the specification's best reading.** The size limit is 30 KB for a bubble and 50 KB for a
+  carousel, counted in unescaped UTF-8 bytes (the smaller of the two possible counts, to err towards letting a
+  message through); padding and offsets also accept `{n}%`; whether a bubble holding a video may sit in a carousel is
+  not checked. A rule that proves too strict is a bug — the way out is a Raw node, and the fix is to relax the rule.
+  **以規格最佳解讀訂的上限。** 大小上限氣泡 30 KB、輪播 50 KB,以未跳脫的 UTF-8 位元組計(兩種算法中較小者,
+  寧可放行);padding 與 offset 也接受 `{n}%`;含 video 的氣泡能否放進輪播不檢查。規則太嚴就是 bug —— 出路是 Raw
+  節點,修正方式是放寬規則。
+
 ## [0.4.0] - 2026-10-27
 
 Several official accounts on one site, an event-handler base class for webhooks with maintenance mode and error
@@ -624,7 +734,8 @@ and webhook endpoint on top.
   自己實作等於維護一份會隨協定改版而落後的實作 —— 落後的症狀是連接器連得上但工具清單是空的。
   核心與整合兩個套件不受影響。
 
-[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...v0.2.0

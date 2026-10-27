@@ -203,6 +203,83 @@ await line.PushAsync(userId, [
 
 ---
 
+## Flex Message
+
+Flex 訊息可以用 C# 組出來,也可以從 LINE Flex Message Simulator 產生的 JSON 讀回;兩條路最後是同一套強型別模型,送出之前都會被檢查。
+
+```csharp
+using Ozakboy.Line.Messaging.Actions;
+using Ozakboy.Line.Messaging.Messages.Flex;
+
+var card = new FlexBubble
+{
+    Size = FlexBubbleSize.Mega,
+    Hero = new FlexImage("https://example.com/ramen.jpg")
+    {
+        Size = FlexSize.Full,
+        AspectRatio = FlexAspectRatio.Of(20, 13),
+        AspectMode = FlexAspectMode.Cover,
+    },
+    Body = new FlexBox
+    {
+        Layout = FlexLayout.Vertical,
+        Spacing = FlexSpacing.Sm,
+        Contents =
+        [
+            new FlexText("拉麵一番") { Weight = FlexWeight.Bold, Size = FlexSize.Xl },
+            new FlexBox
+            {
+                Layout = FlexLayout.Baseline,
+                Margin = FlexSpacing.Md,
+                Contents =
+                [
+                    new FlexIcon("https://example.com/star.png") { Size = FlexSize.Sm },
+                    new FlexText("4.5") { Size = FlexSize.Sm, Color = FlexColor.Rgb(0x99, 0x99, 0x99), Margin = FlexSpacing.Md, Flex = 0 },
+                ],
+            },
+        ],
+    },
+    Footer = new FlexBox
+    {
+        Layout = FlexLayout.Vertical,
+        Contents = [new FlexButton(new UriAction("https://example.com/book") { Label = "訂位" }) { Style = FlexButtonStyle.Primary }],
+    },
+};
+
+var message = new FlexMessage("拉麵一番,評價 4.5", card);
+await line.PushAsync(userId, [message]);   // 先跑 Validate();版面寫壞就一個請求都不送
+```
+
+所有帶值的欄位都是 `string` —— `"3xl"`、`"20px"`、`"50%"`、`"1.91:1"`、`"#112233CC"` —— 關鍵字與工廠放在靜態類別(`FlexSize`、`FlexSpacing`、`FlexColor`、`FlexAspectRatio`、`FlexBorderWidth`、`FlexCornerRadius`、`FlexLayout` …)。列舉裝不下這些值,而且 LINE 日後新增的每個值都得等套件發版。
+
+**讀回 Simulator 的 JSON。**
+
+```csharp
+var read = FlexMessage.Parse("altText", jsonFromSimulator);   // bubble 或 carousel
+var message = read.GetValueOrThrow();                          // message.Container 是強型別的節點樹
+var raw = message.Container!.GetRawNodePaths();                // 模型在哪裡放棄,例如 "contents[1].body.contents[0]"
+```
+
+節點含有模型不認得的欄位、值的型別不符或 `type` 未知(已廢止的 `spacer` 也在內)時,**整個節點**以 `RawFlexComponent` / `RawFlexContainer` 保存並原樣寫回,所以讀回再寫出不掉資料。版面裡的動作讀回時是 `RawAction`。`FlexMessage.FromJson` 與 `JsonElement` 建構子維持原樣:JSON 原封不動送出。
+
+**`Validate()` 檢查什麼**(`line.validation.invalid_flex`,訊息指出路徑,例如 `contents[2].body.contents[0].url`;一個請求都不送):
+
+| 範圍 | 規則 |
+| --- | --- |
+| 輪播 | 1 到 12 個氣泡 |
+| 氣泡 | header / hero / body / footer 至少一個;`size` 是七個關鍵字之一 |
+| Hero 與影片 | hero 是 image、box 或 video;video 只能當 hero,`altContent` 是 image 或 box,動作是 URI 動作 |
+| 方塊 | `layout` 必填且是 horizontal / vertical / baseline;baseline 方塊只能放 text、icon、filler;`flex` 不得為負 |
+| 文字 | `text` 與 `contents`(span)恰好擇一;`maxLines` 不得為負 |
+| 值 | size / align / gravity / weight / style / decoration / position / aspectMode / 按鈕 height 與 style / justifyContent / alignItems 的關鍵字;margin、spacing、padding、offset、width、height、cornerRadius、borderWidth 收關鍵字、`{n}px`,或(width、height、padding、offset)`{n}%`;顏色 `#RRGGBB` 或 `#RRGGBBAA`;長寬比 `w:h`;漸層角度 `{n}deg` |
+| 媒體 | image、icon、video 位址是 https,不超過 2000 字 |
+| 動作 | 各自走一般的動作檢查,label 最多 20 |
+| 大小 | 版面 JSON 不超過 30 KB(輪播 50 KB),以未跳脫的 UTF-8 位元組計 |
+
+**`RawFlexComponent`、`RawFlexContainer`、`RawAction` 與原樣 JSON 路徑不檢查**(整體大小除外):它們是 LINE 新增了模型還沒跟上的東西時的出路,所以從 Simulator 讀回的版面只驗到模型涵蓋的範圍,`GetRawNodePaths()`(或 MCP 工具 `line_validate_flex`)會告訴你在哪裡中斷。有兩件事刻意留給 LINE:含 video 的氣泡能不能放進輪播,以及本套件不知道的任何上限。訊息範本渲染出來的結果若含 `flex` 訊息,維持原狀 —— 渲染時不解析它 —— 想檢查可以用 `FlexMessage.Parse`。
+
+---
+
 ## 訊息範本
 
 一組可重複使用、可帶變數的 LINE 訊息。存的是**訊息陣列的 JSON** 而不是一段純文字,所以圖片、Flex 版面、快速回覆都能存進範本;改文案也不必動程式碼。
@@ -614,6 +691,7 @@ await line.PushAsync(userId, [map.GetValueOrThrow()]);
 | 動作 `label` | 至多 20(圖片地圖 50、圖片輪播 12) | `invalid_action` |
 | `postback` data | 至多 300 字元 | `invalid_action` |
 | `uri` 動作 | 協定須在白名單內 | `invalid_action` |
+| Flex 版面 | 結構、值的格式、位址與大小,訊息指出路徑;Raw 節點不檢查 | `invalid_flex` |
 | 圖文選單區塊動作 | 逐一檢查,訊息指出是哪個區塊 | `invalid_action` |
 | 範本與圖片地圖的形狀 | 見上文 | `invalid_template` / `invalid_imagemap` |
 | 統計單位 | 每次請求 1 個、30 個英數字元或底線 | `invalid_aggregation_unit` |
@@ -683,11 +761,14 @@ builder.Services.AddMcpServer()
 | 圖文選單 | `line_list_rich_menus` · `line_get_default_rich_menu` · `line_list_rich_menu_aliases` · `line_validate_rich_menu` · `line_replace_rich_menu`(走待審) |
 | 自動回覆 | `line_list_auto_replies` · `line_upsert_auto_reply` · `line_delete_auto_reply` · `line_test_auto_reply` |
 | 訊息範本 | `line_list_templates` · `line_get_template` · `line_upsert_template` · `line_delete_template` · `line_render_template` |
+| Flex | `line_validate_flex` |
 | LIFF | `line_list_liff_apps` · `line_create_liff_app`(走待審)· `line_delete_liff_app`(走待審) |
 
 規則與範本的工具**不走待審**,因為它們不會自己送訊息:改壞一條規則的後果是回錯話,而不是主動打擾全體好友,改回來也只是再 upsert 一次。要完全禁止的話有 `AllowRuleEdits` / `AllowTemplateEdits` / `AllowRichMenuChanges` 三個開關。宿主沒有 `AddLineTemplates` / `AddLineAutoReply` 時,那幾個工具仍然掛得上,只是呼叫時回一句「未啟用」—— 這比工具根本不出現清楚。
 
-四個新的讀取工具(`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`)不改變任何東西,也不計每日額度。`line_get_delivery_stats` 收一個 `yyyy-MM-dd` 日期,一次回覆、推播、群發、廣播四種管道;統計尚未備妥的管道回報 `unready` 且數量為 null,不是 0。LIFF 工具需要 `ILineLiffClient`,宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。**建立與刪除 LIFF 應用程式與 `line_replace_rich_menu` 一樣走待審佇列**:`Review` 模式下只把計畫排進佇列(待發種類 `LiffCreate` 與 `LiffDelete`),由人核准後 `ILineMcpOutboxService.ApproveAndSendAsync` 才呼叫 `ILineLiffClient` —— 刪除會讓所有指向它的連結失效,不能讓 AI 單獨決定。`Direct` 模式先執行再記錄,執行時寫一行日誌;未呼叫 `AddLineLiff` 時核准會把項目標為 `Failed`(`line.not_configured`)。`line_list_liff_apps` 仍是直接、唯讀的查詢。三個送出工具多了選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存,核准時才套用。
+`line_validate_flex` 同樣唯讀:給它一份 Flex 版面(bubble、carousel 或整則 `flex` 訊息),它回答能否解析為強型別、哪些節點仍是 Raw(因此不被驗證)、帶版面路徑的本地驗證結果,以及 JSON 大小與其上限 —— 讓外部 AI 在排進佇列之前先自檢。它不送出任何東西、不計每日額度。
+
+0.3.0 的四個新讀取工具(`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`)不改變任何東西,也不計每日額度。`line_get_delivery_stats` 收一個 `yyyy-MM-dd` 日期,一次回覆、推播、群發、廣播四種管道;統計尚未備妥的管道回報 `unready` 且數量為 null,不是 0。LIFF 工具需要 `ILineLiffClient`,宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。**建立與刪除 LIFF 應用程式與 `line_replace_rich_menu` 一樣走待審佇列**:`Review` 模式下只把計畫排進佇列(待發種類 `LiffCreate` 與 `LiffDelete`),由人核准後 `ILineMcpOutboxService.ApproveAndSendAsync` 才呼叫 `ILineLiffClient` —— 刪除會讓所有指向它的連結失效,不能讓 AI 單獨決定。`Direct` 模式先執行再記錄,執行時寫一行日誌;未呼叫 `AddLineLiff` 時核准會把項目標為 `Failed`(`line.not_configured`)。`line_list_liff_apps` 仍是直接、唯讀的查詢。三個送出工具多了選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存,核准時才套用。
 
 ---
 
@@ -745,7 +826,7 @@ builder.Services.AddMcpServer()
 | 帳號連結與內容 | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
 | 身分 | `ChannelName`(用戶端綁定的 channel;預設為空字串) |
 
-訊息型別:`TextMessage`(含 `Emojis`)、`TextV2Message`(配 `LineTextSubstitution`)、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
+訊息型別:`TextMessage`(含 `Emojis`)、`TextV2Message`(配 `LineTextSubstitution`)、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`(強型別版面在 `Ozakboy.Line.Messaging.Messages.Flex`,見上文)、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
 
 `ReplaceRichMenuAsync` 把「建立 → 上傳圖片 → 設預設 → 指向別名 → 刪舊選單」串成一次呼叫。失敗處理刻意不對稱:**圖片上傳失敗會刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟),但**刪舊選單失敗只記錄、整體仍算成功**(新選單已經上線,回報失敗只會讓呼叫端重做而多出一個選單)。
 
@@ -777,6 +858,20 @@ builder.Services.AddMcpServer()
 | `PostbackAction.CreateStoredAsync` · `LinePostbackDataResolver.ResolveAsync` · `LinePostbackDataToken` | 把長資料暫存在短代碼後面,再把代碼還原成資料。 |
 | `ImagemapMessage.ForSingleImage(url, altText, height, action)` | 單圖 imagemap(實驗性)。 |
 
+### Flex 訊息
+
+| 成員 | 做什麼 |
+| --- | --- |
+| `FlexBubble` · `FlexCarousel` | 兩種容器;`FlexCarousel.Contents` 放 1 到 12 個氣泡。 |
+| `FlexBox` · `FlexText`(+ `FlexSpan`)· `FlexImage` · `FlexVideo` · `FlexIcon` · `FlexButton` · `FlexSeparator` · `FlexFiller` | 元件;所有帶值的欄位都是 `string`。 |
+| `FlexLinearGradient` · `FlexBubbleStyles` · `FlexBlockStyle` | 方塊漸層與各區域的氣泡樣式。 |
+| `FlexSize` · `FlexSpacing` · `FlexColor` · `FlexAspectRatio` · `FlexBorderWidth` · `FlexCornerRadius` · `FlexLayout` · … | 關鍵字常數與量值工廠(`Px`、`Percent`、`Rgb`、`Of`)。 |
+| `new FlexMessage(altText, container)` · `FlexMessage.Container` | 強型別路徑;原樣 JSON 路徑的 `Container` 為 `null`。 |
+| `FlexMessage.Parse(altText, json)` | 把版面 JSON 讀成強型別模型;不認得的部分保留為 Raw。 |
+| `FlexContainer.GetRawNodePaths()` | 以 `RawFlexComponent` / `RawFlexContainer` 保存的節點路徑。 |
+| `RawFlexContainer` · `RawFlexComponent` | 逃生口;原樣送出、不驗證。 |
+| `FlexMessage.Validate()` | 本地檢查;`line.validation.invalid_flex` 並附路徑。 |
+
 ### 訊息範本與自動回覆
 
 | 成員 | 做什麼 |
@@ -801,7 +896,7 @@ builder.Services.AddMcpServer()
 | `AddLineMcp(configure, stores?)` | 設定、待發佇列、待發項目服務、抓圖用的具名 HTTP 用戶端。 |
 | `AddLineMcpServer(configure, stores?)` | 上面全部,加一個只掛 LINE 工具的 stateless MCP server。 |
 | `LineMcpOptions.ChannelName` · `LineMcpClients` | 工具與待發服務用哪個 channel 的用戶端;channel 不存在為 `line.not_configured`。 |
-| `IMcpServerBuilder.WithLineTools()` | 把七組工具加進宿主既有的 MCP server。 |
+| `IMcpServerBuilder.WithLineTools()` | 把八組工具加進宿主既有的 MCP server。 |
 | `UseLineMcpKeyGate(prefix?)` | 金鑰閘,**必須在 `UseRouting` 之前**。 |
 | `UseLineMcpWellKnownNotFound()` | `/.well-known/` 一律乾淨 404。 |
 | `MapLineMcp(prefix?)` | MCP 端點,prefix 要與金鑰閘用同一個。 |
@@ -828,7 +923,7 @@ builder.Services.AddMcpServer()
 
 ### 錯誤代碼
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.validation.invalid_flex` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
 
 這些字串是公開契約,發佈後不再更動。
 
