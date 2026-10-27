@@ -1,0 +1,8 @@
+{
+  "source": "Get number of sent reply messages — GET /v2/bot/message/delivery/reply?date=yyyyMMdd(push / multicast / broadcast 同形狀)",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料。",
+  "body": {
+    "status": "ready",
+    "success": 10000
+  }
+}

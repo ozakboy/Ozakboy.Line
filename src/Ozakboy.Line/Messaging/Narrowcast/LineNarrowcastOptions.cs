@@ -27,7 +27,7 @@ namespace Ozakboy.Line.Messaging.Narrowcast;
 /// the difference from a broadcast is then only billing and progress tracking.
 /// </para>
 /// </remarks>
-public sealed class LineNarrowcastOptions
+public sealed partial class LineNarrowcastOptions
 {
     /// <summary>
     /// 收件對象的運算樹;不設定時不限對象。

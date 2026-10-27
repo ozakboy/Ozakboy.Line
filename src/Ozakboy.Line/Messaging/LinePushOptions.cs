@@ -33,4 +33,21 @@ public sealed class LinePushOptions
     /// </para>
     /// </remarks>
     public Guid? RetryKey { get; set; }
+
+    /// <summary>
+    /// 統計單位(<c>customAggregationUnits</c>):讓 LINE 把這次發送歸入指定單位,之後可用
+    /// <see cref="ILineMessagingClient.GetMessageEventInsightByUnitAsync"/> 依單位彙總成效。
+    /// The aggregation units (<c>customAggregationUnits</c>): LINE files this send under the named unit, so its
+    /// performance can be rolled up later with <see cref="ILineMessagingClient.GetMessageEventInsightByUnitAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// 目前 LINE 每次請求最多 <b>1</b> 個單位,名稱 ≤ 30 字且只能是英數與底線;違反時在送出前以
+    /// <see cref="LineErrorCodes.InvalidAggregationUnit"/> 失敗,一個請求都不送。不設定或空清單時不寫這個欄位。
+    /// LINE currently allows at most <b>1</b> unit per request, with a name of up to 30 characters made of
+    /// letters, digits and underscores; a violation fails with <see cref="LineErrorCodes.InvalidAggregationUnit"/>
+    /// before anything is sent. When unset or empty the field is not written.
+    /// </remarks>
+#pragma warning disable CA2227 // 與其他選項一樣讓呼叫端用物件初始設定式整個指定。Assigned whole through an object initialiser like the other options.
+    public IList<string>? CustomAggregationUnits { get; set; }
+#pragma warning restore CA2227
 }

@@ -69,6 +69,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return NotConfigured<IReadOnlyList<LineSentMessage>>();
         }
 
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units.ToFailure<IReadOnlyList<LineSentMessage>>();
+        }
+
         var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
@@ -109,6 +115,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return NotConfigured<IReadOnlyList<LineSentMessage>>();
         }
 
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units.ToFailure<IReadOnlyList<LineSentMessage>>();
+        }
+
         var parsed = ParseRawMessages(messagesJson);
         if (parsed.IsFailure)
         {
@@ -139,6 +151,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         if (!Options.IsConfigured)
         {
             return Result.Failure(NotConfiguredError());
+        }
+
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units;
         }
 
         if (to.Count is 0 or > LineMessagingLimits.MulticastRecipients)
@@ -186,6 +204,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return Result.Failure(NotConfiguredError());
         }
 
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units;
+        }
+
         var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
@@ -217,6 +241,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         if (!Options.IsConfigured)
         {
             return Result.Failure(NotConfiguredError());
+        }
+
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units;
         }
 
         var parsed = ParseRawMessages(messagesJson);
@@ -1041,7 +1071,11 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
     /// <param name="writeBody">寫出內容欄位的委派。The delegate writing the body's fields.</param>
     /// <returns>建好的請求。The request.</returns>
     private HttpRequestMessage Post(string uri, LinePushOptions? options, Action<Utf8JsonWriter> writeBody) =>
-        JsonRequest(HttpMethod.Post, uri, options?.RetryKey, writeBody);
+        JsonRequest(HttpMethod.Post, uri, options?.RetryKey, writer =>
+        {
+            writeBody(writer);
+            WriteCustomAggregationUnits(writer, options?.CustomAggregationUnits);
+        });
 
     /// <summary>
     /// 建立帶權杖與 JSON 內容的請求(POST 或 PUT)。

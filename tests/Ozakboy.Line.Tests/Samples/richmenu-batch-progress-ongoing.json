@@ -1,0 +1,8 @@
+{
+  "source": "Get the status of rich menu batch control — GET /v2/bot/richmenu/progress/batch?requestId=…(進行中,尚無 completedTime)",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料。",
+  "body": {
+    "phase": "ongoing",
+    "acceptedTime": "2026-10-27T01:00:00.000+00:00"
+  }
+}

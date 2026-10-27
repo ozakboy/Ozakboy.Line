@@ -1,0 +1,47 @@
+{
+  "source": "Get user interaction statistics — GET /v2/bot/insight/message/event?requestId=…",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "overview": {
+      "requestId": "f70dd685-499a-4231-a441-f24b8d4fba21",
+      "timestamp": 1568214000,
+      "delivered": 320,
+      "uniqueImpression": 82,
+      "uniqueClick": null,
+      "uniqueMediaPlayed": 2,
+      "uniqueMediaPlayed100Percent": null
+    },
+    "messages": [
+      {
+        "seq": 1,
+        "impression": 100,
+        "mediaPlayed": 30,
+        "mediaPlayed25Percent": 25,
+        "mediaPlayed50Percent": 20,
+        "mediaPlayed75Percent": 10,
+        "mediaPlayed100Percent": null,
+        "uniqueMediaPlayed": 2,
+        "uniqueMediaPlayed25Percent": 2,
+        "uniqueMediaPlayed50Percent": 1,
+        "uniqueMediaPlayed75Percent": null,
+        "uniqueMediaPlayed100Percent": null
+      }
+    ],
+    "clicks": [
+      {
+        "seq": 1,
+        "url": "https://example.com/campaign",
+        "click": 7,
+        "uniqueClick": 5,
+        "uniqueClickOfRequest": null
+      },
+      {
+        "seq": 2,
+        "url": "https://example.com/second",
+        "click": null,
+        "uniqueClick": null,
+        "uniqueClickOfRequest": 9
+      }
+    ]
+  }
+}

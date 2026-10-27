@@ -1,0 +1,11 @@
+{
+  "source": "Get name list of units used this month — GET /v2/bot/message/aggregation/list?limit=&start=",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料。",
+  "body": {
+    "customAggregationUnits": [
+      "promotion_a",
+      "promotion_b"
+    ],
+    "next": "MTc5Nzg4MjAwMDAw"
+  }
+}

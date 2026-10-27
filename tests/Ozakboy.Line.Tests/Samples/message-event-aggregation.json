@@ -1,0 +1,37 @@
+{
+  "source": "Get statistics per unit — GET /v2/bot/insight/message/event/aggregation?customAggregationUnit=…&from=yyyyMMdd&to=yyyyMMdd",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料。",
+  "body": {
+    "overview": {
+      "uniqueImpression": 40646,
+      "uniqueClick": 20,
+      "uniqueMediaPlayed": 31,
+      "uniqueMediaPlayed100Percent": null
+    },
+    "messages": [
+      {
+        "seq": 1,
+        "impression": 42,
+        "mediaPlayed": 30,
+        "mediaPlayed25Percent": null,
+        "mediaPlayed50Percent": null,
+        "mediaPlayed75Percent": null,
+        "mediaPlayed100Percent": null,
+        "uniqueMediaPlayed": 10,
+        "uniqueMediaPlayed25Percent": null,
+        "uniqueMediaPlayed50Percent": null,
+        "uniqueMediaPlayed75Percent": null,
+        "uniqueMediaPlayed100Percent": null
+      }
+    ],
+    "clicks": [
+      {
+        "seq": 1,
+        "url": "https://example.com/campaign",
+        "click": 8,
+        "uniqueClick": 6,
+        "uniqueClickOfRequest": 6
+      }
+    ]
+  }
+}

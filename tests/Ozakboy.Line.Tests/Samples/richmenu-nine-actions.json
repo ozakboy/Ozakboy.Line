@@ -1,0 +1,22 @@
+{
+  "source": "Get rich menu — GET /v2/bot/richmenu/{richMenuId}(九個區塊,各用一種動作型別)",
+  "retrieved": "依官方文件(LINE Messaging API reference)整理,擷取日期 2026-10-27;非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "richMenuId": "richmenu-test-0001",
+    "size": { "width": 2500, "height": 1686 },
+    "selected": true,
+    "name": "nine actions",
+    "chatBarText": "選單",
+    "areas": [
+      { "bounds": { "x": 0, "y": 0, "width": 833, "height": 562 }, "action": { "type": "message", "label": "說話", "text": "你好" } },
+      { "bounds": { "x": 833, "y": 0, "width": 833, "height": 562 }, "action": { "type": "uri", "label": "網站", "uri": "https://example.com/" } },
+      { "bounds": { "x": 1666, "y": 0, "width": 834, "height": 562 }, "action": { "type": "postback", "label": "回傳", "data": "action=buy&itemid=1", "displayText": "買" } },
+      { "bounds": { "x": 0, "y": 562, "width": 833, "height": 562 }, "action": { "type": "datetimepicker", "label": "日期", "data": "storeId=12345", "mode": "date", "initial": "2026-10-27" } },
+      { "bounds": { "x": 833, "y": 562, "width": 833, "height": 562 }, "action": { "type": "camera", "label": "相機" } },
+      { "bounds": { "x": 1666, "y": 562, "width": 834, "height": 562 }, "action": { "type": "cameraRoll", "label": "相簿" } },
+      { "bounds": { "x": 0, "y": 1124, "width": 833, "height": 562 }, "action": { "type": "location", "label": "位置" } },
+      { "bounds": { "x": 833, "y": 1124, "width": 833, "height": 562 }, "action": { "type": "richmenuswitch", "label": "換頁", "richMenuAliasId": "richmenu-alias-b", "data": "richmenu-changed-to-b" } },
+      { "bounds": { "x": 1666, "y": 1124, "width": 834, "height": 562 }, "action": { "type": "clipboard", "label": "複製", "clipboardText": "COUPON2026" } }
+    ]
+  }
+}

@@ -33,6 +33,12 @@ public sealed partial class LineMessagingClient
             return NotConfigured<string>();
         }
 
+        var units = ValidateAggregationUnits(options?.CustomAggregationUnits);
+        if (units.IsFailure)
+        {
+            return units.ToFailure<string>();
+        }
+
         var count = ValidateMessages(messages);
         if (count.IsFailure)
         {
@@ -262,6 +268,8 @@ public sealed partial class LineMessagingClient
         {
             writer.WriteBoolean("notificationDisabled", true);
         }
+
+        WriteCustomAggregationUnits(writer, options.CustomAggregationUnits);
     }
 
     /// <summary>
