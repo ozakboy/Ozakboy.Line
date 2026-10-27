@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Ozakboy.Core.Abstractions;
@@ -32,6 +33,7 @@ public sealed class LineSendTools
     private readonly ILineMessagingClient _messaging;
     private readonly ILineMcpOutboxStore _outbox;
     private readonly IOptions<LineMcpOptions> _options;
+    private readonly LineMcpClients? _clients;
 
     /// <summary>
     /// 建立工具組。
@@ -52,6 +54,24 @@ public sealed class LineSendTools
         _messaging = messaging;
         _outbox = outbox;
         _options = options;
+    }
+
+    /// <summary>
+    /// 建立工具組,用戶端依 <see cref="LineMcpOptions.ChannelName"/> 取得(容器用)。
+    /// Creates the tool set with the client of the channel named by <see cref="LineMcpOptions.ChannelName"/>
+    /// (used by the container).
+    /// </summary>
+    /// <param name="clients">依 <see cref="LineMcpOptions.ChannelName"/> 取得用戶端的來源。Resolves the clients of the channel named by <see cref="LineMcpOptions.ChannelName"/>.</param>
+    /// <param name="outbox">待發佇列。The outbox.</param>
+    /// <param name="options">MCP 設定。The MCP settings.</param>
+    /// <exception cref="ArgumentNullException">
+    /// 任一參數為 <see langword="null"/> 時擲出。Thrown when any argument is <see langword="null"/>.
+    /// </exception>
+    [ActivatorUtilitiesConstructor]
+    public LineSendTools(LineMcpClients clients, ILineMcpOutboxStore outbox, IOptions<LineMcpOptions> options)
+        : this(clients?.Messaging!, outbox, options)
+    {
+        _clients = clients;
     }
 
     /// <summary>
@@ -211,6 +231,14 @@ public sealed class LineSendTools
         if (LineMcpAggregationUnit.Validate(customAggregationUnit) is { } unitProblem)
         {
             return LineMcpJson.Error(unitProblem);
+        }
+
+        // channel 不存在就在提出時失敗:排進待審佇列、等核准時才發現送不出去,只會讓審核的人白跑一趟。
+        // A missing channel fails at proposal time: queueing it only to find at approval that it cannot be sent
+        // sends the reviewer on a pointless errand.
+        if (_clients?.MessagingUnavailableError is { } unavailable)
+        {
+            return LineMcpJson.Error(unavailable);
         }
 
         var composed = LineMcpMessages.Compose(text, messagesJson);

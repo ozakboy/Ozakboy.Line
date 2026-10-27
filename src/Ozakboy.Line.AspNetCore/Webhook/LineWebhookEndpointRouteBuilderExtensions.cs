@@ -140,17 +140,108 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     public static IEndpointConventionBuilder MapLineWebhook(
         this IEndpointRouteBuilder endpoints,
         string pattern,
-        Func<LineWebhookPayload, HttpContext, CancellationToken, Task> handler)
+        Func<LineWebhookPayload, HttpContext, CancellationToken, Task> handler) =>
+        endpoints.MapLineWebhook(pattern, handler, new LineWebhookEndpointOptions());
+
+    /// <summary>
+    /// 掛上 webhook 端點,把整批內容交給處理常式,並可指定這個端點對應的 channel。
+    /// Maps a webhook endpoint that hands the whole payload to the handler, optionally pinning the channel the
+    /// endpoint serves.
+    /// </summary>
+    /// <param name="endpoints">端點路由建構器。The endpoint route builder.</param>
+    /// <param name="pattern">路由樣式。The route pattern.</param>
+    /// <param name="handler">整批內容的處理常式。The handler, called once with the whole payload.</param>
+    /// <param name="options">端點設定;只有 <see cref="LineWebhookEndpointOptions.ChannelName"/> 與 <see cref="LineWebhookEndpointOptions.ChannelRouteParameter"/> 對整批多載生效。The endpoint settings; of them only <see cref="LineWebhookEndpointOptions.ChannelName"/> and <see cref="LineWebhookEndpointOptions.ChannelRouteParameter"/> apply to this whole-payload overload.</param>
+    /// <returns>端點慣例建構器。The endpoint convention builder.</returns>
+    /// <remarks>
+    /// 選項物件排在處理常式<b>之後</b>:排在前面的話,<see langword="null"/> 或未標型別的 lambda 會與逐事件多載的
+    /// <c>Action&lt;LineWebhookEndpointOptions&gt;?</c> 參數產生歧義,那是既有程式碼的原始碼相容性問題。
+    /// The options object comes <b>after</b> the handler: ahead of it, a <see langword="null"/> or an untyped
+    /// lambda would be ambiguous with the per-event overload's <c>Action&lt;LineWebhookEndpointOptions&gt;?</c>
+    /// parameter, a source-compatibility problem for existing code.
+    /// 驗簽通過後,channel 名稱放在 <c>HttpContext.Items[LineWebhookItems.ChannelName]</c>。
+    /// 維護模式、錯誤通知與自動回覆是逐事件的功能,這個多載不套用。
+    /// Once the signature verifies, the channel name is in <c>HttpContext.Items[LineWebhookItems.ChannelName]</c>.
+    /// Maintenance mode, error notification and auto reply are per-event features and do not apply here.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// 任一參數為 <see langword="null"/> 時擲出。
+    /// Thrown when any argument is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// <c>ChannelName</c> 與 <c>ChannelRouteParameter</c> 同時設定,或指定了 channel 卻沒有註冊
+    /// <see cref="ILineMessagingClientFactory"/> 時,在<b>掛端點當下</b>擲出。
+    /// Thrown <b>while mapping</b> when both <c>ChannelName</c> and <c>ChannelRouteParameter</c> are set, or a
+    /// channel is specified without an <see cref="ILineMessagingClientFactory"/> registered.
+    /// </exception>
+    public static IEndpointConventionBuilder MapLineWebhook(
+        this IEndpointRouteBuilder endpoints,
+        string pattern,
+        Func<LineWebhookPayload, HttpContext, CancellationToken, Task> handler,
+        LineWebhookEndpointOptions options)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(handler);
+        ArgumentNullException.ThrowIfNull(options);
+
+        return MapPayload(endpoints, pattern, LineWebhookChannelSelection.Create(options), handler);
+    }
+
+    /// <summary>
+    /// 所有 webhook 端點共用的實作:先決定 channel、再驗簽、再解析、再交給處理常式。
+    /// The implementation every webhook endpoint shares: decide the channel, verify the signature, parse, then
+    /// hand over to the handler.
+    /// </summary>
+    /// <param name="endpoints">端點路由建構器。The endpoint route builder.</param>
+    /// <param name="pattern">路由樣式。The route pattern.</param>
+    /// <param name="channel">channel 挑選方式。How the channel is selected.</param>
+    /// <param name="handler">整批內容的處理常式。The handler, called once with the whole payload.</param>
+    /// <returns>端點慣例建構器。The endpoint convention builder.</returns>
+    private static IEndpointConventionBuilder MapPayload(
+        IEndpointRouteBuilder endpoints,
+        string pattern,
+        LineWebhookChannelSelection channel,
+        Func<LineWebhookPayload, HttpContext, CancellationToken, Task> handler)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+
+        if (channel.IsSelected)
+        {
+            RequireService(endpoints, typeof(ILineMessagingClientFactory), nameof(ILineMessagingClientFactory) + "(指定了 webhook 的 channel;請呼叫 services.AddLineMessaging(...))");
+        }
 
         return endpoints.MapPost(pattern, async (HttpContext context) =>
         {
             var cancellationToken = context.RequestAborted;
-            var channelSecret = context.RequestServices
-                .GetRequiredService<IOptions<LineMessagingOptions>>()
-                .Value.ChannelSecret;
+            var channelName = string.Empty;
+            string channelSecret;
+
+            if (channel.IsSelected)
+            {
+                // 先確認 channel 存在才碰密鑰:名稱來自路由(不可信的輸入),不在清單內就在這裡回 401,
+                // 不讀內容、不取選項、不拿空密鑰去驗簽。
+                // Check the channel exists before touching any secret. The name comes from the route, which is
+                // untrusted input: one outside the list is answered with a 401 right here — no body read, no
+                // options fetched, and no signature checked against an empty key.
+                channelName = channel.Resolve(context);
+                var factory = context.RequestServices.GetRequiredService<ILineMessagingClientFactory>();
+                if (!factory.Contains(channelName))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    Log.WebhookUnknownChannel(CreateLogger(context));
+                    return;
+                }
+
+                channelSecret = context.RequestServices
+                    .GetRequiredService<IOptionsMonitor<LineMessagingOptions>>()
+                    .Get(channelName).ChannelSecret;
+            }
+            else
+            {
+                channelSecret = context.RequestServices
+                    .GetRequiredService<IOptions<LineMessagingOptions>>()
+                    .Value.ChannelSecret;
+            }
 
             var payload = await context.Request
                 .ReadLineWebhookAsync(channelSecret, cancellationToken)
@@ -170,6 +261,8 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
                 Log.WebhookRejected(CreateLogger(context), payload.Error.Code);
                 return;
             }
+
+            context.Items[LineWebhookItems.ChannelName] = channelName;
 
             await handler(payload.GetValueOrThrow(), context, cancellationToken).ConfigureAwait(false);
 
@@ -201,7 +294,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
         Result<LineAutoReplyOutcome> outcome;
         try
         {
-            outcome = await service.HandleAsync(webhookEvent, cancellationToken).ConfigureAwait(false);
+            outcome = await service.HandleAsync(webhookEvent, GetChannelName(context), cancellationToken).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // 理由同處理常式:一個事件的失敗不得讓整批回非 2xx 而被 LINE 重送。
         catch (Exception exception)
@@ -218,6 +311,36 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
         }
 
         context.Items[LineWebhookItems.AutoReplyOutcome] = outcome.GetValueOrThrow();
+    }
+
+    /// <summary>
+    /// 取得驗簽通過後放在 <c>HttpContext.Items</c> 的 channel 名稱;沒有時為空字串(預設 channel)。
+    /// Gets the channel name stored in <c>HttpContext.Items</c> after verification, or an empty string (the
+    /// default channel) when absent.
+    /// </summary>
+    /// <param name="context">請求內容。The HTTP context.</param>
+    /// <returns>channel 名稱。The channel name.</returns>
+    private static string GetChannelName(HttpContext context) =>
+        context.Items.TryGetValue(LineWebhookItems.ChannelName, out var name) && name is string text ? text : string.Empty;
+
+    /// <summary>
+    /// 取得某個 channel 的發訊用戶端:預設 channel 優先用直接註冊的 <see cref="ILineMessagingClient"/>
+    /// (宿主可能替換它),具名 channel 走工廠。
+    /// Gets a channel's messaging client: the default channel prefers a directly registered
+    /// <see cref="ILineMessagingClient"/> (a host may have replaced it), and a named channel goes through the
+    /// factory.
+    /// </summary>
+    /// <param name="services">請求的服務提供者。The request's service provider.</param>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
+    /// <returns>發訊用戶端。The messaging client.</returns>
+    private static ILineMessagingClient ResolveMessaging(IServiceProvider services, string channelName)
+    {
+        if (channelName.Length == 0 && services.GetService<ILineMessagingClient>() is { } defaultClient)
+        {
+            return defaultClient;
+        }
+
+        return services.GetRequiredService<ILineMessagingClientFactory>().Get(channelName);
     }
 
     /// <summary>
@@ -261,6 +384,18 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             Level = LogLevel.Warning,
             Message = "LINE webhook 請求被拒絕({ErrorCode})。A LINE webhook request was rejected ({ErrorCode}).")]
         internal static partial void WebhookRejected(ILogger logger, string errorCode);
+
+        /// <summary>
+        /// webhook 請求指向不存在的 channel 時的記錄(不記名稱:那是未驗證的輸入)。
+        /// Logged when a webhook request targets a channel that does not exist. The name is not logged, being
+        /// unverified input.
+        /// </summary>
+        /// <param name="logger">記錄器。The logger.</param>
+        [LoggerMessage(
+            EventId = 2208,
+            Level = LogLevel.Warning,
+            Message = "LINE webhook 請求指向未註冊的 channel,回 401。A LINE webhook request targeted an unregistered channel and was answered with 401.")]
+        internal static partial void WebhookUnknownChannel(ILogger logger);
 
         /// <summary>
         /// 自動回覆回報失敗時的記錄。

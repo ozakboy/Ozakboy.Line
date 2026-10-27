@@ -20,6 +20,29 @@ public sealed class LineMcpOptions
     public LineMcpSendMode SendMode { get; set; } = LineMcpSendMode.Review;
 
     /// <summary>
+    /// MCP 工具操作的 LINE channel 名稱;預設空字串,即預設 channel。
+    /// The LINE channel the MCP tools operate on; the empty string, the default channel, by default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 一組 MCP 端點只對應一個 channel;要讓 AI 操作多個官方帳號,各掛一組端點(各自的 <see cref="ApiKey"/> 與 channel)。
+    /// 名稱不在 <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory.ChannelNames"/> 內時,
+    /// 所有工具回 <see cref="LineErrorCodes.NotConfigured"/> 失敗、一個請求都不送,也不會退回別的 channel。
+    /// One MCP endpoint serves one channel; to let an AI operate several official accounts, mount one endpoint
+    /// per account, each with its own <see cref="ApiKey"/> and channel. A name outside
+    /// <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory.ChannelNames"/> makes every tool answer a
+    /// <see cref="LineErrorCodes.NotConfigured"/> failure with no request sent, and never falls back to another
+    /// channel.
+    /// </para>
+    /// <para>
+    /// 預設 channel 優先用直接註冊的 <see cref="Ozakboy.Line.Messaging.ILineMessagingClient"/>(沒有工廠的舊宿主照常可用)。
+    /// The default channel prefers a directly registered <see cref="Ozakboy.Line.Messaging.ILineMessagingClient"/>,
+    /// so an older host with no factory carries on working.
+    /// </para>
+    /// </remarks>
+    public string ChannelName { get; set; } = string.Empty;
+
+    /// <summary>
     /// 每日(依 <see cref="TimeZoneId"/> 的當地日期)可建立的待發項目上限,預設 10 筆。
     /// The most outbox items that can be created in one local day, by <see cref="TimeZoneId"/>; ten by default.
     /// </summary>

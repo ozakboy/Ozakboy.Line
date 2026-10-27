@@ -19,6 +19,10 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
 {
     private const string GroupSource = """{"type":"group","groupId":"G1","userId":"U-member"}""";
 
+    private static readonly string[] MemberOnly = ["U-member"];
+    private static readonly string[] TwoAdmins = ["U-admin-1", "U-admin-2"];
+    private static readonly string[] ThreeAdmins = ["U-a", "U-b", "U-c"];
+
     [TestMethod]
     public async Task Maintenance_NonAdmin_GetsTheFixedText_AndNeitherHandlerNorAutoReplyRuns()
     {
@@ -33,7 +37,7 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
             client,
             services => services.AddSingleton<ILineAutoReplyService>(autoReply),
             endpoints => endpoints.MapLineWebhook("/line/webhook", Via(options), Count(() => handled++)),
-            items => skipped = items.TryGetValue(LineWebhookItems.MaintenanceSkipped, out var value) ? (bool?)value : null);
+            items => skipped = items.TryGetValue("Ozakboy.Line.MaintenanceSkipped", out var value) ? (bool?)value : null);
         using var http = host.GetTestClient();
 
         using var response = await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody());
@@ -46,7 +50,6 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
         Assert.AreEqual("rt-1", reply.Target);
         Assert.AreEqual("系統維護中,請稍後再試。", reply.Text);
         Assert.AreEqual(true, skipped);
-        Assert.AreEqual("Ozakboy.Line.MaintenanceSkipped", LineWebhookItems.MaintenanceSkipped, "鍵名是契約。");
     }
 
     [TestMethod]
@@ -168,7 +171,7 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
         (await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody(source: GroupSource))).Dispose();
         (await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody(source: """{"type":"group","groupId":"G1"}"""))).Dispose();
 
-        CollectionAssert.AreEqual(new[] { "U-member" }, handled, "沒有 UserId 的事件視為非管理員。");
+        CollectionAssert.AreEqual(MemberOnly, handled, "沒有 UserId 的事件視為非管理員。");
         Assert.AreEqual(1, recorder.Sends.Count);
     }
 
@@ -286,7 +289,7 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         var pushes = recorder.Sends.Where(s => s.Method == "PushTextAsync").OrderBy(s => s.Target, StringComparer.Ordinal).ToList();
         Assert.AreEqual(2, pushes.Count);
-        CollectionAssert.AreEqual(new[] { "U-admin-1", "U-admin-2" }, pushes.Select(p => p.Target).ToArray());
+        CollectionAssert.AreEqual(TwoAdmins, pushes.Select(p => p.Target).ToArray());
         const string Expected = "[Ozakboy.Line] webhook 事件處理失敗\n事件:message 01ABC\n來源:user/U1\n例外:System.InvalidOperationException: 處理常式壞了";
         Assert.AreEqual(Expected, pushes[0].Text);
         Assert.AreEqual(Expected, pushes[1].Text);
@@ -309,7 +312,7 @@ public sealed class LineWebhookMaintenanceAndNotificationTests
         using var response = await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody());
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, "通知壞了也不能改變 200 的契約。");
-        CollectionAssert.AreEquivalent(new[] { "U-a", "U-b", "U-c" }, recorder.Sends.Select(s => s.Target).ToArray(), "一位失敗不影響其他管理員。");
+        CollectionAssert.AreEquivalent(ThreeAdmins, recorder.Sends.Select(s => s.Target).ToArray(), "一位失敗不影響其他管理員。");
     }
 
     [TestMethod]

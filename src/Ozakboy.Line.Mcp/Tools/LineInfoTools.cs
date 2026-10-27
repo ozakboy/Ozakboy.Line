@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Ozakboy.Line.Mcp.Outbox;
@@ -23,6 +24,7 @@ public sealed class LineInfoTools
     private readonly ILineMessagingClient _messaging;
     private readonly ILineMcpOutboxStore _outbox;
     private readonly IOptions<LineMcpOptions> _options;
+    private readonly LineMcpClients? _clients;
 
     /// <summary>
     /// 建立工具組。
@@ -46,6 +48,24 @@ public sealed class LineInfoTools
     }
 
     /// <summary>
+    /// 建立工具組,用戶端依 <see cref="LineMcpOptions.ChannelName"/> 取得(容器用)。
+    /// Creates the tool set with the client of the channel named by <see cref="LineMcpOptions.ChannelName"/>
+    /// (used by the container).
+    /// </summary>
+    /// <param name="clients">依 <see cref="LineMcpOptions.ChannelName"/> 取得用戶端的來源。Resolves the clients of the channel named by <see cref="LineMcpOptions.ChannelName"/>.</param>
+    /// <param name="outbox">待發佇列。The outbox.</param>
+    /// <param name="options">MCP 設定。The MCP settings.</param>
+    /// <exception cref="ArgumentNullException">
+    /// 任一參數為 <see langword="null"/> 時擲出。Thrown when any argument is <see langword="null"/>.
+    /// </exception>
+    [ActivatorUtilitiesConstructor]
+    public LineInfoTools(LineMcpClients clients, ILineMcpOutboxStore outbox, IOptions<LineMcpOptions> options)
+        : this(clients?.Messaging!, outbox, options)
+    {
+        _clients = clients;
+    }
+
+    /// <summary>
     /// 查詢官方帳號自身的資訊。
     /// Reads the official account's own information.
     /// </summary>
@@ -62,6 +82,7 @@ public sealed class LineInfoTools
             : LineMcpJson.Ok(new
             {
                 ok = true,
+                channelName = _clients?.ChannelName ?? _options.Value.ChannelName,
                 botInfo = info.GetValueOrThrow(),
             });
     }

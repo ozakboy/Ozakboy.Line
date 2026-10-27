@@ -120,6 +120,29 @@ public static class LineAutoReplyMatcher
     }
 
     /// <summary>
+    /// 挑出適用於指定 channel 的規則:<see cref="LineAutoReplyRule.ChannelName"/> 為空,或與
+    /// <paramref name="channelName"/> 相同(序數比較)的那些;相對順序不變。
+    /// Picks the rules that apply to a channel: those whose <see cref="LineAutoReplyRule.ChannelName"/> is empty
+    /// or equals <paramref name="channelName"/> (ordinal); their relative order is kept.
+    /// </summary>
+    /// <param name="rules">全部規則。Every rule.</param>
+    /// <param name="channelName">目前的 channel 名稱;空字串是預設 channel。The current channel name; the empty string is the default channel.</param>
+    /// <returns>適用的規則。The applicable rules.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// 任一參數為 <see langword="null"/> 時擲出。
+    /// Thrown when any argument is <see langword="null"/>.
+    /// </exception>
+    public static IReadOnlyList<LineAutoReplyRule> ForChannel(IReadOnlyList<LineAutoReplyRule> rules, string channelName)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(channelName);
+
+        return [.. rules.Where(rule =>
+            string.IsNullOrEmpty(rule.ChannelName)
+            || string.Equals(rule.ChannelName, channelName, StringComparison.Ordinal))];
+    }
+
+    /// <summary>
     /// 檢查一條規則本身是否成立。
     /// Checks whether a rule holds together on its own.
     /// </summary>

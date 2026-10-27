@@ -66,13 +66,23 @@ public static class LineMcpServiceCollectionExtensions
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Ozakboy.Line.Mcp");
         });
 
-        services.TryAddSingleton<ILineMcpOutboxService>(provider => new LineMcpOutboxService(
-            provider.GetRequiredService<ILineMcpOutboxStore>(),
-            provider.GetRequiredService<ILineMessagingClient>(),
-            provider.GetRequiredService<IHttpClientFactory>(),
-            provider.GetRequiredService<TimeProvider>(),
-            provider.GetService<Ozakboy.Line.Liff.ILineLiffClient>(),
-            provider.GetService<Microsoft.Extensions.Logging.ILogger<LineMcpOutboxService>>()));
+        // 工具與待發服務依 LineMcpOptions.ChannelName 取用戶端。transient:每次解析各拿目前範圍的 provider,
+        // 不把 scoped 的相依鎖死在 singleton 上。
+        // The tools and the outbox service take their clients by LineMcpOptions.ChannelName. Transient, so each
+        // resolution gets the current scope's provider instead of pinning scoped dependencies to a singleton.
+        services.TryAddTransient<LineMcpClients>();
+
+        services.TryAddSingleton<ILineMcpOutboxService>(provider =>
+        {
+            var clients = provider.GetRequiredService<LineMcpClients>();
+            return new LineMcpOutboxService(
+                provider.GetRequiredService<ILineMcpOutboxStore>(),
+                clients.Messaging,
+                provider.GetRequiredService<IHttpClientFactory>(),
+                provider.GetRequiredService<TimeProvider>(),
+                clients.Liff,
+                provider.GetService<Microsoft.Extensions.Logging.ILogger<LineMcpOutboxService>>());
+        });
 
         return services;
     }

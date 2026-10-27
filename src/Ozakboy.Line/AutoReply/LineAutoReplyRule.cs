@@ -69,6 +69,27 @@ public sealed class LineAutoReplyRule
     public int Priority { get; set; } = 100;
 
     /// <summary>
+    /// 這條規則適用的 channel 名稱;<see langword="null"/> 或空字串表示<b>所有 channel</b>(含預設 channel)。
+    /// The channel this rule applies to; <see langword="null"/> or an empty string means <b>every channel</b>,
+    /// the default one included.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 空值代表「全部」而不是「只有預設 channel」:0.4.0 之前存下的規則沒有這個欄位(讀回來是 <see langword="null"/>),
+    /// 它們在單一 channel 時代的行為就是「對唯一的 channel 生效」,升級後不該有任何一條突然不回話。
+    /// An empty value means "all", not "the default channel only": rules stored before 0.4.0 have no such field
+    /// (they read back as <see langword="null"/>), and in the single-channel era they applied to the one channel
+    /// there was — no rule should fall silent because of an upgrade.
+    /// </para>
+    /// <para>
+    /// 挑選順序(優先序、明確程度)不因此改變,只是比對前先把不適用於目前 channel 的規則排除。
+    /// The selection order — priority, then specificity — is unchanged; rules that do not apply to the current
+    /// channel are simply set aside before matching.
+    /// </para>
+    /// </remarks>
+    public string? ChannelName { get; set; }
+
+    /// <summary>
     /// 要回覆的 LINE 訊息陣列 JSON,1 到 5 則。
     /// The JSON of the LINE message array to reply with, between one and five messages.
     /// </summary>
@@ -107,6 +128,7 @@ public sealed class LineAutoReplyRule
         Pattern = Pattern,
         IgnoreCase = IgnoreCase,
         Priority = Priority,
+        ChannelName = ChannelName,
         MessagesJson = MessagesJson,
         CreatedAt = CreatedAt,
         UpdatedAt = UpdatedAt,

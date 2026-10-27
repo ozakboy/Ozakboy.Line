@@ -25,6 +25,20 @@ public static class LineWebhookItems
     public const string AutoReplyOutcome = "Ozakboy.Line.AutoReplyOutcome";
 
     /// <summary>
+    /// 驗簽通過的請求所屬的 channel 名稱(型別 <see cref="string"/>);預設 channel 為空字串。
+    /// The name of the channel a signature-verified request belongs to (a <see cref="string"/>); an empty string
+    /// for the default channel.
+    /// </summary>
+    /// <remarks>
+    /// 只有在驗簽<b>通過</b>之後才放值:驗簽失敗(含未知 channel)的請求不會有這個鍵。
+    /// 見 <see cref="LineWebhookEndpointOptions.ChannelName"/> 與 <see cref="LineWebhookEndpointOptions.ChannelRouteParameter"/>。
+    /// It is set only <b>after</b> the signature verifies: a request that fails verification, an unknown channel
+    /// included, carries no such key. See <see cref="LineWebhookEndpointOptions.ChannelName"/> and
+    /// <see cref="LineWebhookEndpointOptions.ChannelRouteParameter"/>.
+    /// </remarks>
+    public const string ChannelName = "Ozakboy.Line.ChannelName";
+
+    /// <summary>
     /// 本次請求有事件因維護模式被擋下時為 <see langword="true"/>(型別 <see cref="bool"/>);沒有被擋下就沒有這個鍵。
     /// <see langword="true"/> (a <see cref="bool"/>) when maintenance mode held back at least one event in this
     /// request; the key is absent otherwise.

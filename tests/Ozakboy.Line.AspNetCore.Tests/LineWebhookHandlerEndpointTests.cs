@@ -16,6 +16,11 @@ namespace Ozakboy.Line.AspNetCore.Tests;
 [TestClass]
 public sealed class LineWebhookHandlerEndpointTests
 {
+    private static readonly string[] MessageThenTextCalls = ["message", "text:你好"];
+    private static readonly string[] OnlyGoodCalls = ["好"];
+    private static readonly string[] OutcomeRuleThenNoneCalls = ["outcome:rule-1", "outcome:none"];
+    private static readonly string[] OutcomeNoneCalls = ["outcome:none"];
+
     [TestMethod]
     public async Task Handler_IsResolvedFromDi_AndDispatchesWithAWorkingContext()
     {
@@ -34,7 +39,7 @@ public sealed class LineWebhookHandlerEndpointTests
         using var response = await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody(text: "你好"));
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        CollectionAssert.AreEqual(new[] { "message", "text:你好" }, probe.Calls);
+        CollectionAssert.AreEqual(MessageThenTextCalls, probe.Calls);
         var reply = recorder.Sends.Single();
         Assert.AreEqual("ReplyTextAsync", reply.Method);
         Assert.AreEqual("rt-1", reply.Target);
@@ -86,7 +91,7 @@ public sealed class LineWebhookHandlerEndpointTests
         using var response = await WebhookTestHost.PostAsync(http, TwoEvents);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode, "例外隔離與狀態碼契約不變。");
-        CollectionAssert.AreEqual(new[] { "好" }, probe.Calls);
+        CollectionAssert.AreEqual(OnlyGoodCalls, probe.Calls);
     }
 
     [TestMethod]
@@ -141,7 +146,7 @@ public sealed class LineWebhookHandlerEndpointTests
         using var response = await WebhookTestHost.PostAsync(http, TwoEvents);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
-        CollectionAssert.AreEqual(new[] { "outcome:rule-1", "outcome:none" }, probe.Calls, "自動回覆失敗時不放值,不能讀到上一個事件留下的結果。");
+        CollectionAssert.AreEqual(OutcomeRuleThenNoneCalls, probe.Calls, "自動回覆失敗時不放值,不能讀到上一個事件留下的結果。");
     }
 
     [TestMethod]
@@ -161,7 +166,7 @@ public sealed class LineWebhookHandlerEndpointTests
 
         (await WebhookTestHost.PostAsync(http, WebhookTestHost.TextEventBody())).Dispose();
 
-        CollectionAssert.AreEqual(new[] { "outcome:none" }, probe.Calls);
+        CollectionAssert.AreEqual(OutcomeNoneCalls, probe.Calls);
     }
 
     [TestMethod]

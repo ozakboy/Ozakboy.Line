@@ -32,13 +32,35 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
     private const string DisplayNameVariable = "displayName";
 
     private readonly ILineAutoReplyStore _store;
-    private readonly ILineMessagingClient _messaging;
+    private readonly ILineMessagingClient? _defaultMessaging;
+    private readonly ILineMessagingClientFactory? _factory;
     private readonly IOptions<LineAutoReplyOptions> _options;
     private readonly ILogger<LineAutoReplyService>? _logger;
 
     /// <summary>
-    /// 建立服務。
-    /// Creates the service.
+    /// 建立服務,各 channel 的用戶端由工廠提供(多 channel)。
+    /// Creates the service with each channel's client supplied by the factory (multi-channel).
+    /// </summary>
+    /// <param name="store">規則儲存體。The rule store.</param>
+    /// <param name="factory">Messaging 用戶端工廠。The messaging client factory.</param>
+    /// <param name="options">自動回覆設定。The auto reply settings.</param>
+    /// <param name="logger">記錄器,可為 <see langword="null"/>。The logger, which may be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">
+    /// 前三個參數之一為 <see langword="null"/> 時擲出。
+    /// Thrown when any of the first three arguments is <see langword="null"/>.
+    /// </exception>
+    public LineAutoReplyService(
+        ILineAutoReplyStore store,
+        ILineMessagingClientFactory factory,
+        IOptions<LineAutoReplyOptions> options,
+        ILogger<LineAutoReplyService>? logger = null)
+        : this(store, null, RequireNotNull(factory), options, logger)
+    {
+    }
+
+    /// <summary>
+    /// 建立只服務預設 channel 的服務(0.4.0 之前的建構方式)。
+    /// Creates a service that serves only the default channel (the pre-0.4.0 construction).
     /// </summary>
     /// <param name="store">規則儲存體。The rule store.</param>
     /// <param name="messaging">Messaging API 用戶端。The Messaging API client.</param>
@@ -53,23 +75,53 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
         ILineMessagingClient messaging,
         IOptions<LineAutoReplyOptions> options,
         ILogger<LineAutoReplyService>? logger = null)
+        : this(store, RequireNotNull(messaging), null, options, logger)
+    {
+    }
+
+    /// <summary>
+    /// 容器用的建構子:預設 channel 優先用直接註冊的 <see cref="ILineMessagingClient"/>(宿主可能替換它),
+    /// 其餘 channel 走工廠。
+    /// The constructor the container uses: the default channel prefers a directly registered
+    /// <see cref="ILineMessagingClient"/> (a host may have replaced it), and every other channel goes through the
+    /// factory.
+    /// </summary>
+    /// <param name="store">規則儲存體。The rule store.</param>
+    /// <param name="defaultMessaging">預設 channel 的用戶端,可為 <see langword="null"/>。The default channel's client, which may be <see langword="null"/>.</param>
+    /// <param name="factory">工廠,可為 <see langword="null"/>。The factory, which may be <see langword="null"/>.</param>
+    /// <param name="options">自動回覆設定。The auto reply settings.</param>
+    /// <param name="logger">記錄器。The logger.</param>
+    internal LineAutoReplyService(
+        ILineAutoReplyStore store,
+        ILineMessagingClient? defaultMessaging,
+        ILineMessagingClientFactory? factory,
+        IOptions<LineAutoReplyOptions> options,
+        ILogger<LineAutoReplyService>? logger)
     {
         ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(messaging);
         ArgumentNullException.ThrowIfNull(options);
 
         _store = store;
-        _messaging = messaging;
+        _defaultMessaging = defaultMessaging;
+        _factory = factory;
         _options = options;
         _logger = logger;
     }
 
     /// <inheritdoc />
+    public Task<Result<LineAutoReplyOutcome>> HandleAsync(
+        LineWebhookEvent webhookEvent,
+        CancellationToken cancellationToken = default) =>
+        HandleAsync(webhookEvent, string.Empty, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<Result<LineAutoReplyOutcome>> HandleAsync(
         LineWebhookEvent webhookEvent,
+        string channelName,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(webhookEvent);
+        ArgumentNullException.ThrowIfNull(channelName);
 
         if (!_options.Value.Enabled || string.IsNullOrWhiteSpace(webhookEvent.ReplyToken))
         {
@@ -87,13 +139,13 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
 
         if (string.Equals(webhookEvent.Type, LineWebhookEventTypes.Follow, StringComparison.Ordinal))
         {
-            return await HandleFollowAsync(webhookEvent, cancellationToken).ConfigureAwait(false);
+            return await HandleFollowAsync(webhookEvent, channelName, cancellationToken).ConfigureAwait(false);
         }
 
         if (string.Equals(webhookEvent.Type, LineWebhookEventTypes.Message, StringComparison.Ordinal)
             && webhookEvent.Message is { Type: LineWebhookMessageTypes.Text, Text: { } text })
         {
-            return await HandleTextAsync(webhookEvent, text, cancellationToken).ConfigureAwait(false);
+            return await HandleTextAsync(webhookEvent, channelName, text, cancellationToken).ConfigureAwait(false);
         }
 
         return Result.Success(LineAutoReplyOutcome.Skipped);
@@ -104,18 +156,26 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
     /// Handles an add-friend event by finding the welcome rule and answering.
     /// </summary>
     /// <param name="webhookEvent">事件。The event.</param>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>處理結果。The outcome.</returns>
     private async Task<Result<LineAutoReplyOutcome>> HandleFollowAsync(
         LineWebhookEvent webhookEvent,
+        string channelName,
         CancellationToken cancellationToken)
     {
-        var rules = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var messaging = ResolveClient(channelName);
+        if (messaging is null)
+        {
+            return UnknownChannel<LineAutoReplyOutcome>(channelName);
+        }
+
+        var rules = LineAutoReplyMatcher.ForChannel(await _store.ListAsync(cancellationToken).ConfigureAwait(false), channelName);
         var rule = LineAutoReplyMatcher.FindFirst(rules, LineAutoReplyMatchMode.Follow);
 
         return rule is null
             ? Result.Success(LineAutoReplyOutcome.Skipped)
-            : await ReplyAsync(webhookEvent, rule, text: string.Empty, cancellationToken).ConfigureAwait(false);
+            : await ReplyAsync(messaging, webhookEvent, rule, text: string.Empty, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -123,33 +183,43 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
     /// Handles a text message: the ordinary rules first, then the fallback rule.
     /// </summary>
     /// <param name="webhookEvent">事件。The event.</param>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
     /// <param name="text">訊息文字。The message text.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>處理結果。The outcome.</returns>
     private async Task<Result<LineAutoReplyOutcome>> HandleTextAsync(
         LineWebhookEvent webhookEvent,
+        string channelName,
         string text,
         CancellationToken cancellationToken)
     {
-        var rules = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var messaging = ResolveClient(channelName);
+        if (messaging is null)
+        {
+            return UnknownChannel<LineAutoReplyOutcome>(channelName);
+        }
+
+        var rules = LineAutoReplyMatcher.ForChannel(await _store.ListAsync(cancellationToken).ConfigureAwait(false), channelName);
         var rule = LineAutoReplyMatcher.Match(rules, text)
             ?? LineAutoReplyMatcher.FindFirst(rules, LineAutoReplyMatchMode.Fallback);
 
         return rule is null
             ? Result.Success(LineAutoReplyOutcome.NoMatch)
-            : await ReplyAsync(webhookEvent, rule, text, cancellationToken).ConfigureAwait(false);
+            : await ReplyAsync(messaging, webhookEvent, rule, text, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// 渲染規則的回覆內容並送出。
     /// Renders a rule's reply and sends it.
     /// </summary>
+    /// <param name="messaging">這個 channel 的用戶端。This channel's client.</param>
     /// <param name="webhookEvent">事件。The event.</param>
     /// <param name="rule">命中的規則。The matching rule.</param>
     /// <param name="text">使用者原訊息;加好友事件為空字串。The user's message, or an empty string on an add-friend event.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>處理結果。The outcome.</returns>
     private async Task<Result<LineAutoReplyOutcome>> ReplyAsync(
+        ILineMessagingClient messaging,
         LineWebhookEvent webhookEvent,
         LineAutoReplyRule rule,
         string text,
@@ -158,7 +228,7 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [TextVariable] = text,
-            [DisplayNameVariable] = await ResolveDisplayNameAsync(webhookEvent, rule, cancellationToken).ConfigureAwait(false),
+            [DisplayNameVariable] = await ResolveDisplayNameAsync(messaging, webhookEvent, rule, cancellationToken).ConfigureAwait(false),
         };
 
         var rendered = LineTemplateRenderer.Render(rule.MessagesJson, values);
@@ -167,7 +237,7 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
             return rendered.ToFailure<LineAutoReplyOutcome>();
         }
 
-        var replied = await _messaging
+        var replied = await messaging
             .ReplyRawJsonAsync(webhookEvent.ReplyToken!, rendered.GetValueOrThrow(), cancellationToken)
             .ConfigureAwait(false);
 
@@ -185,9 +255,53 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
     }
 
     /// <summary>
+    /// 確認參數不是 <see langword="null"/> 並原樣回傳,讓建構子串接時也擲出 <see cref="ArgumentNullException"/>。
+    /// Checks that an argument is not <see langword="null"/> and returns it, so constructor chaining still throws
+    /// <see cref="ArgumentNullException"/>.
+    /// </summary>
+    /// <typeparam name="T">參數型別。The argument type.</typeparam>
+    /// <param name="value">參數。The argument.</param>
+    /// <returns>同一個參數。The same argument.</returns>
+    private static T RequireNotNull<T>(T value)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return value;
+    }
+
+    /// <summary>
+    /// 找出某個 channel 的用戶端;沒有這個 channel 時為 <see langword="null"/>。
+    /// Finds a channel's client, or <see langword="null"/> when there is no such channel.
+    /// </summary>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
+    /// <returns>用戶端或 <see langword="null"/>。The client, or <see langword="null"/>.</returns>
+    private ILineMessagingClient? ResolveClient(string channelName)
+    {
+        if (channelName.Length == 0 && _defaultMessaging is not null)
+        {
+            return _defaultMessaging;
+        }
+
+        return _factory is not null && _factory.Contains(channelName) ? _factory.Get(channelName) : null;
+    }
+
+    /// <summary>
+    /// 沒有這個 channel 的失敗。
+    /// The failure for a channel that does not exist.
+    /// </summary>
+    /// <typeparam name="T">結果型別。The result type.</typeparam>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
+    /// <returns>失敗的結果。The failed result.</returns>
+    private static Result<T> UnknownChannel<T>(string channelName) =>
+        Result.Failure<T>(Error.Validation(
+            LineErrorCodes.NotConfigured,
+            $"自動回覆找不到名為「{channelName}」的 LINE Messaging channel。Auto reply found no LINE Messaging channel named \"{channelName}\"."));
+
+    /// <summary>
     /// 取得使用者的顯示名稱,只有規則真的用到 <c>{{displayName}}</c> 時才去查。
     /// Reads the user's display name, and only when the rule actually uses <c>{{displayName}}</c>.
     /// </summary>
+    /// <param name="messaging">這個 channel 的用戶端。This channel's client.</param>
     /// <param name="webhookEvent">事件。The event.</param>
     /// <param name="rule">規則。The rule.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
@@ -209,6 +323,7 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
     /// </para>
     /// </remarks>
     private async Task<string> ResolveDisplayNameAsync(
+        ILineMessagingClient messaging,
         LineWebhookEvent webhookEvent,
         LineAutoReplyRule rule,
         CancellationToken cancellationToken)
@@ -219,7 +334,7 @@ public sealed partial class LineAutoReplyService : ILineAutoReplyService
             return string.Empty;
         }
 
-        var profile = await _messaging
+        var profile = await messaging
             .GetProfileAsync(webhookEvent.Source.UserId, cancellationToken)
             .ConfigureAwait(false);
 

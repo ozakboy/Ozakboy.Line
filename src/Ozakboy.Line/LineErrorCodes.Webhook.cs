@@ -19,4 +19,10 @@ public static partial class LineErrorCodes
     /// and no request is sent.
     /// </summary>
     public const string WebhookReplyTokenUsed = "line.webhook.reply_token_used";
+
+    /// <summary>
+    /// 要還原 postback 資料,但這個事件不是 <c>postback</c> 事件(或沒有 postback 內容)。
+    /// Postback data was asked for, but the event is not a <c>postback</c> event (or carries no postback body).
+    /// </summary>
+    public const string WebhookNotPostback = "line.webhook.not_postback";
 }

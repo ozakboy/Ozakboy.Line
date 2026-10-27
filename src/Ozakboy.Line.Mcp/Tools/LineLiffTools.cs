@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Ozakboy.Line.Liff;
@@ -70,6 +71,35 @@ public sealed class LineLiffTools
         _options = options;
         _liff = liff;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// 建立工具組,LIFF 用戶端依 <see cref="LineMcpOptions.ChannelName"/> 取得(容器用)。
+    /// Creates the tool set with the LIFF client of the channel named by <see cref="LineMcpOptions.ChannelName"/>
+    /// (used by the container).
+    /// </summary>
+    /// <param name="clients">依 <see cref="LineMcpOptions.ChannelName"/> 取得用戶端的來源。Resolves the clients of the channel named by <see cref="LineMcpOptions.ChannelName"/>.</param>
+    /// <param name="outbox">待發佇列。The outbox.</param>
+    /// <param name="options">MCP 設定。The MCP settings.</param>
+    /// <param name="logger">日誌記錄器,可為 <see langword="null"/>。The logger; may be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="clients"/>、<paramref name="outbox"/> 或 <paramref name="options"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="clients"/>, <paramref name="outbox"/> or <paramref name="options"/> is <see langword="null"/>.
+    /// </exception>
+    [ActivatorUtilitiesConstructor]
+    public LineLiffTools(
+        LineMcpClients clients,
+        ILineMcpOutboxStore outbox,
+        IOptions<LineMcpOptions> options,
+        ILogger<LineLiffTools>? logger = null)
+        : this(outbox, options, RequireClients(clients).Liff, logger)
+    {
+    }
+
+    private static LineMcpClients RequireClients(LineMcpClients clients)
+    {
+        ArgumentNullException.ThrowIfNull(clients);
+        return clients;
     }
 
     /// <summary>

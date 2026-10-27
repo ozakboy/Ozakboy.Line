@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using Ozakboy.Line.AutoReply;
+using Ozakboy.Line.Messaging;
 using Ozakboy.Line.Templates;
 
 namespace Ozakboy.Line.Mcp.Tools;
@@ -21,6 +22,7 @@ public sealed class LineAutoReplyTools
 {
     private readonly IOptions<LineMcpOptions> _options;
     private readonly ILineAutoReplyStore? _store;
+    private readonly ILineMessagingClientFactory? _factory;
 
     /// <summary>
     /// 建立工具組。
@@ -30,6 +32,11 @@ public sealed class LineAutoReplyTools
     /// <param name="store">
     /// 規則儲存體;宿主沒有呼叫 <c>AddLineAutoReply</c> 時為 <see langword="null"/>。
     /// The rule store, or <see langword="null"/> when the host has not called <c>AddLineAutoReply</c>.
+    /// </param>
+    /// <param name="factory">
+    /// Messaging 用戶端工廠,用來檢查規則的 channel 名稱拼對了沒;沒註冊時為 <see langword="null"/>,不檢查。
+    /// The messaging client factory, used to check that a rule's channel name is spelt right; <see langword="null"/>
+    /// when none is registered, in which case no check is made.
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="options"/> 為 <see langword="null"/> 時擲出。
@@ -42,12 +49,16 @@ public sealed class LineAutoReplyTools
     /// these tools answer that the feature is off, rather than making the whole container fail to resolve at
     /// startup.
     /// </remarks>
-    public LineAutoReplyTools(IOptions<LineMcpOptions> options, ILineAutoReplyStore? store = null)
+    public LineAutoReplyTools(
+        IOptions<LineMcpOptions> options,
+        ILineAutoReplyStore? store = null,
+        ILineMessagingClientFactory? factory = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         _options = options;
         _store = store;
+        _factory = factory;
     }
 
     /// <summary>
@@ -88,6 +99,7 @@ public sealed class LineAutoReplyTools
     /// <param name="enabled">是否啟用。Whether it is on.</param>
     /// <param name="ignoreCase">是否忽略大小寫。Whether case is ignored.</param>
     /// <param name="priority">優先序。The priority.</param>
+    /// <param name="channelName">適用的 channel;省略代表所有 channel。The channel the rule applies to; omit for every channel.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>結果的 JSON。The result as JSON.</returns>
     [McpServerTool(Name = "line_upsert_auto_reply")]
@@ -95,7 +107,9 @@ public sealed class LineAutoReplyTools
                  "match 可填六種:Exact(整句相同)、StartsWith(開頭符合)、Contains(包含)、Regex(正規表示式)、" +
                  "Follow(加好友時的歡迎訊息,不看 pattern)、Fallback(收到文字但沒有其他規則命中時的回覆,不看 pattern)。" +
                  "messagesJson 為 LINE 訊息陣列(1~5 則),可用佔位符 {{text}}(使用者原訊息)與 {{displayName}}(使用者顯示名稱)。" +
-                 "priority 小的先比對;同分時 Exact > StartsWith > Contains > Regex。")]
+                 "priority 小的先比對;同分時 Exact > StartsWith > Contains > Regex。" +
+                 "channelName 指定規則只適用於哪個 LINE channel(多官方帳號時用);省略或空字串代表所有 channel。" +
+                 "更新既有規則時整條規則會被取代,所以省略 channelName 會讓它變成適用所有 channel。")]
     public async Task<string> UpsertAutoReplyAsync(
         [Description("規則名稱,給人看的")] string name,
         [Description("比對方式:Exact / StartsWith / Contains / Regex / Follow / Fallback")] string match,
@@ -105,6 +119,7 @@ public sealed class LineAutoReplyTools
         [Description("是否啟用,預設 true")] bool enabled = true,
         [Description("比對時是否忽略大小寫,預設 true")] bool ignoreCase = true,
         [Description("優先序,數字小的先比對,預設 100")] int priority = 100,
+        [Description("規則適用的 channel 名稱;省略或空字串代表所有 channel")] string? channelName = null,
         CancellationToken cancellationToken = default)
     {
         if (_store is null)
@@ -115,6 +130,15 @@ public sealed class LineAutoReplyTools
         if (!_options.Value.AllowRuleEdits)
         {
             return LineMcpJson.Error("這個站台不允許經由 MCP 編輯自動回覆規則(AllowRuleEdits 為 false)。請改由宿主的後台操作。");
+        }
+
+        var channel = string.IsNullOrWhiteSpace(channelName) ? null : channelName.Trim();
+        if (channel is not null && _factory is not null && !_factory.Contains(channel))
+        {
+            // 拼錯的 channel 名稱存進去之後這條規則永遠不會命中,而且沒有任何錯誤 —— 在這裡擋下。
+            // A misspelt channel name would be stored and then never match, with no error anywhere: stop it here.
+            return LineMcpJson.Error(
+                $"channelName「{channel}」不是已註冊的 channel。可用:{string.Join("、", _factory.ChannelNames.Select(n => n.Length == 0 ? "(預設)" : n))}。");
         }
 
         if (string.IsNullOrWhiteSpace(name))
@@ -137,6 +161,7 @@ public sealed class LineAutoReplyTools
             Pattern = pattern ?? string.Empty,
             IgnoreCase = ignoreCase,
             Priority = priority,
+            ChannelName = channel,
             MessagesJson = messagesJson,
         };
 
@@ -201,6 +226,7 @@ public sealed class LineAutoReplyTools
     /// Dry-runs a piece of text to see which rule it would hit.
     /// </summary>
     /// <param name="text">要試的文字。The text to try.</param>
+    /// <param name="channelName">以哪個 channel 試跑;省略時用 MCP 設定的 channel。The channel to try it on; the MCP-configured channel when omitted.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>試跑結果的 JSON。The dry run's result as JSON.</returns>
     /// <remarks>
@@ -212,9 +238,11 @@ public sealed class LineAutoReplyTools
     /// </remarks>
     [McpServerTool(Name = "line_test_auto_reply")]
     [Description("試跑:給一段使用者可能會傳的文字,回報會命中哪一條規則、以及渲染後實際會回覆的訊息內容。" +
-                 "本工具不會送出任何訊息。規則多的時候用它確認新規則有沒有被既有的寬鬆規則蓋掉。")]
+                 "本工具不會送出任何訊息。規則多的時候用它確認新規則有沒有被既有的寬鬆規則蓋掉。" +
+                 "只比對適用於指定 channel 的規則(規則的 channelName 為空代表適用所有 channel);channelName 省略時用這個 MCP 端點對應的 channel。")]
     public async Task<string> TestAutoReplyAsync(
         [Description("要試跑的使用者訊息文字")] string text,
+        [Description("以哪個 channel 試跑;省略時用這個 MCP 端點對應的 channel")] string? channelName = null,
         CancellationToken cancellationToken = default)
     {
         if (_store is null)
@@ -227,7 +255,10 @@ public sealed class LineAutoReplyTools
             return LineMcpJson.Error("text 不可為空白。");
         }
 
-        var rules = await _store.ListAsync(cancellationToken).ConfigureAwait(false);
+        var channel = string.IsNullOrWhiteSpace(channelName) ? _options.Value.ChannelName : channelName.Trim();
+        var rules = LineAutoReplyMatcher.ForChannel(
+            await _store.ListAsync(cancellationToken).ConfigureAwait(false),
+            channel ?? string.Empty);
         var rule = LineAutoReplyMatcher.Match(rules, text)
             ?? LineAutoReplyMatcher.FindFirst(rules, LineAutoReplyMatchMode.Fallback);
 
@@ -288,6 +319,7 @@ public sealed class LineAutoReplyTools
         pattern = rule.Pattern,
         ignoreCase = rule.IgnoreCase,
         priority = rule.Priority,
+        channelName = rule.ChannelName,
         messagesJson = rule.MessagesJson,
         createdAt = rule.CreatedAt,
         updatedAt = rule.UpdatedAt,

@@ -2,6 +2,7 @@ using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.AutoReply;
 using Ozakboy.Line.Messaging;
 using Ozakboy.Line.Messaging.Messages;
+using Ozakboy.Line.Postback;
 
 namespace Ozakboy.Line.Webhook.Handling;
 
@@ -30,6 +31,7 @@ namespace Ozakboy.Line.Webhook.Handling;
 /// </remarks>
 public sealed class LineWebhookContext
 {
+    private readonly ILinePostbackDataStore? _postbackStore;
     private int _replyAttempted;
 
     /// <summary>
@@ -40,6 +42,7 @@ public sealed class LineWebhookContext
     /// <param name="messaging">發訊用戶端。The messaging client.</param>
     /// <param name="channelName">頻道名稱;單頻道時留空字串。The channel name; an empty string for a single channel.</param>
     /// <param name="autoReplyOutcome">自動回覆的結果;沒開自動回覆或自動回覆失敗時為 <see langword="null"/>。The auto reply outcome, or <see langword="null"/> when auto reply is off or failed.</param>
+    /// <param name="postbackStore">postback 資料暫存儲存體,給 <see cref="ResolvePostbackDataAsync"/> 用;沒註冊時為 <see langword="null"/>。The postback data store used by <see cref="ResolvePostbackDataAsync"/>, or <see langword="null"/> when none is registered.</param>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="webhookEvent"/> 或 <paramref name="messaging"/> 為 <see langword="null"/> 時擲出。
     /// Thrown when <paramref name="webhookEvent"/> or <paramref name="messaging"/> is <see langword="null"/>.
@@ -48,7 +51,8 @@ public sealed class LineWebhookContext
         LineWebhookEvent webhookEvent,
         ILineMessagingClient messaging,
         string channelName = "",
-        LineAutoReplyOutcome? autoReplyOutcome = null)
+        LineAutoReplyOutcome? autoReplyOutcome = null,
+        ILinePostbackDataStore? postbackStore = null)
     {
         ArgumentNullException.ThrowIfNull(webhookEvent);
         ArgumentNullException.ThrowIfNull(messaging);
@@ -57,6 +61,7 @@ public sealed class LineWebhookContext
         Messaging = messaging;
         ChannelName = channelName ?? string.Empty;
         AutoReplyOutcome = autoReplyOutcome;
+        _postbackStore = postbackStore;
     }
 
     /// <summary>
@@ -127,6 +132,45 @@ public sealed class LineWebhookContext
         ArgumentNullException.ThrowIfNull(text);
 
         return ReplyCoreAsync(token => Messaging.ReplyTextAsync(token, text, cancellationToken));
+    }
+
+    /// <summary>
+    /// 取得這個 postback 事件的原始資料:暫存代碼會還原,一般資料原樣回傳。
+    /// Gets the original data of this postback event: a staging token is resolved, plain data is returned as is.
+    /// </summary>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 事件不是 postback → <see cref="LineErrorCodes.WebhookNotPostback"/> 失敗;<c>Data</c> 不是暫存代碼 → 原樣成功;
+    /// 是代碼但沒有註冊儲存體 → <see cref="LineErrorCodes.NotConfigured"/> 失敗;其餘交給
+    /// <see cref="LinePostbackDataResolver.ResolveAsync"/>(找不到或過期為 <see cref="LineErrorCodes.PostbackExpired"/>)。
+    /// A <see cref="LineErrorCodes.WebhookNotPostback"/> failure when the event is not a postback; success with the
+    /// data unchanged when it is not a staging token; a <see cref="LineErrorCodes.NotConfigured"/> failure for a
+    /// token with no store registered; otherwise whatever <see cref="LinePostbackDataResolver.ResolveAsync"/>
+    /// answers (<see cref="LineErrorCodes.PostbackExpired"/> when missing or expired).
+    /// </returns>
+    public Task<Result<string>> ResolvePostbackDataAsync(CancellationToken cancellationToken = default)
+    {
+        var postback = Event.Postback;
+        if (postback is null)
+        {
+            return Task.FromResult(Result.Failure<string>(Error.Validation(
+                LineErrorCodes.WebhookNotPostback,
+                "這個事件不是 postback 事件,沒有 postback 資料可還原。This event is not a postback event, so there is no postback data to resolve.")));
+        }
+
+        if (!LinePostbackDataToken.IsToken(postback.Data))
+        {
+            return Task.FromResult(Result.Success(postback.Data));
+        }
+
+        if (_postbackStore is null)
+        {
+            return Task.FromResult(Result.Failure<string>(Error.Validation(
+                LineErrorCodes.NotConfigured,
+                "postback 資料是暫存代碼,但沒有註冊 ILinePostbackDataStore,請先呼叫 services.AddLinePostbackData()。The postback data is a staging token but no ILinePostbackDataStore is registered; call services.AddLinePostbackData() first.")));
+        }
+
+        return LinePostbackDataResolver.ResolveAsync(postback, _postbackStore, cancellationToken);
     }
 
     /// <summary>

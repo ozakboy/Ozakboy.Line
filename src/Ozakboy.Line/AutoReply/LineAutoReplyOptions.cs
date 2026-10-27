@@ -24,9 +24,9 @@ public sealed class LineAutoReplyOptions
     /// </summary>
     /// <remarks>
     /// 設為 <see langword="false"/> 時,
-    /// <see cref="ILineAutoReplyService.HandleAsync"/> 一律回 <see cref="LineAutoReplyOutcome.Skipped"/>,
+    /// <see cref="ILineAutoReplyService.HandleAsync(Ozakboy.Line.Webhook.LineWebhookEvent, CancellationToken)"/> 一律回 <see cref="LineAutoReplyOutcome.Skipped"/>,
     /// 一個請求都不會送出。這是「出事時先把機器人閉嘴」的那個開關 —— 不必動規則,也不必重新部署端點。
-    /// With <see langword="false"/>, <see cref="ILineAutoReplyService.HandleAsync"/> always answers
+    /// With <see langword="false"/>, <see cref="ILineAutoReplyService.HandleAsync(Ozakboy.Line.Webhook.LineWebhookEvent, CancellationToken)"/> always answers
     /// <see cref="LineAutoReplyOutcome.Skipped"/> and sends nothing. This is the switch for keeping the bot quiet
     /// when something has gone wrong, without touching the rules or redeploying the endpoint.
     /// </remarks>

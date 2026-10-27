@@ -1,4 +1,3 @@
-#pragma warning disable CA1861 // 測試裡的常數陣列只用一次,抽成欄位反而難讀。Constant arrays in tests are used once; hoisting them into fields only hurts readability.
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Ozakboy.Line.Liff;
@@ -17,6 +16,10 @@ namespace Ozakboy.Line.Mcp.Tests;
 [TestClass]
 public sealed class LineMcpStatsLiffAndUnitToolsTests
 {
+    private static readonly string[] DeliveryTypes = ["reply", "push", "multicast", "broadcast"];
+    private static readonly string[] RequestIds = ["req-1"];
+    private static readonly string[] AggregationUnits = ["autumn_sale"];
+
     // ---- contract ----
 
     [TestMethod]
@@ -144,7 +147,7 @@ public sealed class LineMcpStatsLiffAndUnitToolsTests
         var deliveries = json.GetProperty("deliveries");
         Assert.AreEqual(4, deliveries.GetArrayLength());
         CollectionAssert.AreEqual(
-            new[] { "reply", "push", "multicast", "broadcast" },
+            DeliveryTypes,
             deliveries.EnumerateArray().Select(entry => entry.GetProperty("type").GetString()).ToArray());
         Assert.AreEqual(12, deliveries[0].GetProperty("success").GetInt64());
         Assert.AreEqual("ready", deliveries[0].GetProperty("status").GetString());
@@ -221,7 +224,7 @@ public sealed class LineMcpStatsLiffAndUnitToolsTests
 
         Assert.IsTrue(json.GetProperty("ok").GetBoolean());
         Assert.AreEqual(100, json.GetProperty("insight").GetProperty("overview").GetProperty("delivered").GetInt64());
-        CollectionAssert.AreEqual(new[] { "req-1" }, messaging.EventInsightRequests, "識別碼前後空白要修掉。");
+        CollectionAssert.AreEqual(RequestIds, messaging.EventInsightRequests, "識別碼前後空白要修掉。");
     }
 
     [TestMethod]
@@ -277,7 +280,7 @@ public sealed class LineMcpStatsLiffAndUnitToolsTests
 
         await tools.SendPushAsync("U1", "嗨", customAggregationUnit: "autumn_sale");
 
-        CollectionAssert.AreEqual(new[] { "autumn_sale" }, messaging.SentOptions.Single()!.CustomAggregationUnits!.ToArray());
+        CollectionAssert.AreEqual(AggregationUnits, messaging.SentOptions.Single()!.CustomAggregationUnits!.ToArray());
     }
 
     [TestMethod]

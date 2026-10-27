@@ -1,4 +1,3 @@
-#pragma warning disable CA1861 // 測試裡的常數陣列只用一次。Constant arrays in tests are used once.
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Ozakboy.Line.Liff;
@@ -21,6 +20,8 @@ namespace Ozakboy.Line.Mcp.Tests;
 [TestClass]
 public sealed class LineMcpLiffToolsTests
 {
+    private static readonly string[] DeletedLiffIds = ["111-aaa"];
+
     [TestMethod]
     public async Task LiffTools_WithoutClient_SayNotConfigured()
     {
@@ -213,7 +214,7 @@ public sealed class LineMcpLiffToolsTests
 
         Assert.IsTrue(json.GetProperty("ok").GetBoolean());
         Assert.AreEqual("direct", json.GetProperty("mode").GetString());
-        CollectionAssert.AreEqual(new[] { "111-aaa" }, liff.Deleted);
+        CollectionAssert.AreEqual(DeletedLiffIds, liff.Deleted);
         Assert.AreEqual(LineMcpOutboxStatus.Sent, (await outbox.ListAsync()).Single().Status);
     }
 
@@ -249,7 +250,7 @@ public sealed class LineMcpLiffToolsTests
         var approved = await service.ApproveAndSendAsync(queued.Id);
 
         Assert.AreEqual(LineMcpOutboxStatus.Sent, approved.GetValueOrThrow().Status);
-        CollectionAssert.AreEqual(new[] { "111-aaa" }, liff.Deleted);
+        CollectionAssert.AreEqual(DeletedLiffIds, liff.Deleted);
     }
 
     [TestMethod]

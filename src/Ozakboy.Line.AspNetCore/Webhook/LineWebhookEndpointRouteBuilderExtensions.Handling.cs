@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Ozakboy.Line.AutoReply;
 using Ozakboy.Line.Messaging;
+using Ozakboy.Line.Postback;
 using Ozakboy.Line.Webhook;
 using Ozakboy.Line.Webhook.Handling;
 
@@ -95,16 +96,22 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
         ArgumentNullException.ThrowIfNull(options);
 
         RequireService(endpoints, typeof(THandler), $"{typeof(THandler).Name}(請呼叫 services.AddLineWebhookHandler<{typeof(THandler).Name}>())");
-        RequireService(endpoints, typeof(ILineMessagingClient), nameof(ILineMessagingClient) + "(請呼叫 services.AddLineMessaging(...))");
+        RequireMessaging(endpoints, LineWebhookChannelSelection.Create(options), "請呼叫 services.AddLineMessaging(...)");
 
         return MapEvents(endpoints, pattern, options, static async (webhookEvent, httpContext, cancellationToken) =>
         {
             var services = httpContext.RequestServices;
             var handler = services.GetRequiredService<THandler>();
-            var messaging = services.GetRequiredService<ILineMessagingClient>();
+            var channelName = GetChannelName(httpContext);
+            var messaging = ResolveMessaging(services, channelName);
             httpContext.Items.TryGetValue(LineWebhookItems.AutoReplyOutcome, out var outcome);
 
-            var context = new LineWebhookContext(webhookEvent, messaging, string.Empty, outcome as LineAutoReplyOutcome);
+            var context = new LineWebhookContext(
+                webhookEvent,
+                messaging,
+                channelName,
+                outcome as LineAutoReplyOutcome,
+                services.GetService<ILinePostbackDataStore>());
             await handler.HandleAsync(webhookEvent, context, cancellationToken).ConfigureAwait(false);
         });
     }
@@ -127,7 +134,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     {
         var plan = EventPlan.Create(endpoints, options);
 
-        return endpoints.MapLineWebhook(pattern, async (LineWebhookPayload payload, HttpContext context, CancellationToken cancellationToken) =>
+        return MapPayload(endpoints, pattern, plan.Channel, async (LineWebhookPayload payload, HttpContext context, CancellationToken cancellationToken) =>
         {
             var logger = CreateLogger(context);
 
@@ -170,6 +177,26 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// 要求端點會用到的發訊用戶端存在:可能落在具名 channel 時要工廠,否則要預設用戶端。
+    /// Requires the messaging client the endpoint will use: the factory when the endpoint may land on a named
+    /// channel, the default client otherwise.
+    /// </summary>
+    /// <param name="endpoints">端點路由建構器。The endpoint route builder.</param>
+    /// <param name="channel">channel 挑選方式。How the channel is selected.</param>
+    /// <param name="hint">缺少時的提示。The hint shown when it is missing.</param>
+    private static void RequireMessaging(IEndpointRouteBuilder endpoints, LineWebhookChannelSelection channel, string hint)
+    {
+        if (channel.MayBeNamed)
+        {
+            RequireService(endpoints, typeof(ILineMessagingClientFactory), nameof(ILineMessagingClientFactory) + "(" + hint + ")");
+        }
+        else
+        {
+            RequireService(endpoints, typeof(ILineMessagingClient), nameof(ILineMessagingClient) + "(" + hint + ")");
+        }
     }
 
     /// <summary>
@@ -219,7 +246,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
 
         try
         {
-            var messaging = context.RequestServices.GetRequiredService<ILineMessagingClient>();
+            var messaging = ResolveMessaging(context.RequestServices, GetChannelName(context));
             var result = await messaging.ReplyTextAsync(webhookEvent.ReplyToken, text, cancellationToken).ConfigureAwait(false);
             if (result.IsFailure)
             {
@@ -255,7 +282,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
     {
         try
         {
-            var messaging = context.RequestServices.GetRequiredService<ILineMessagingClient>();
+            var messaging = ResolveMessaging(context.RequestServices, GetChannelName(context));
             var text = BuildErrorNotification(webhookEvent, exception, plan.IncludeStackTrace);
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(requestToken);
@@ -358,8 +385,10 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             string maintenanceReplyText,
             bool notificationEnabled,
             IReadOnlyList<string> notificationAdminUserIds,
-            bool includeStackTrace)
+            bool includeStackTrace,
+            LineWebhookChannelSelection channel)
         {
+            Channel = channel;
             AutoReply = autoReply;
             MaintenanceEnabled = maintenanceEnabled;
             _maintenanceAdmins = maintenanceAdmins;
@@ -368,6 +397,9 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
             NotificationAdminUserIds = notificationAdminUserIds;
             IncludeStackTrace = includeStackTrace;
         }
+
+        /// <summary>channel 挑選方式。How the channel is selected.</summary>
+        internal LineWebhookChannelSelection Channel { get; }
 
         /// <summary>是否跑自動回覆。Whether auto reply runs.</summary>
         internal bool AutoReply { get; }
@@ -405,6 +437,8 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
         /// <returns>快照。The snapshot.</returns>
         internal static EventPlan Create(IEndpointRouteBuilder endpoints, LineWebhookEndpointOptions options)
         {
+            var channel = LineWebhookChannelSelection.Create(options);
+
             if (options.AutoReply && endpoints.ServiceProvider.GetService<ILineAutoReplyService>() is null)
             {
                 // 在掛端點當下就失敗,而不是等第一個使用者傳訊息、發現沒有回應才開始查。
@@ -432,7 +466,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
                         "開啟了 webhook 端點的維護模式,但 Maintenance.ReplyText 是空白。Maintenance mode is enabled on the webhook endpoint but Maintenance.ReplyText is blank.");
                 }
 
-                RequireService(endpoints, typeof(ILineMessagingClient), nameof(ILineMessagingClient) + "(維護模式要回覆文字;請呼叫 services.AddLineMessaging(...))");
+                RequireMessaging(endpoints, channel, "維護模式要回覆文字;請呼叫 services.AddLineMessaging(...)");
             }
 
             var notification = options.ErrorNotification;
@@ -445,7 +479,7 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
                         "開啟了 webhook 端點的錯誤通知,但 ErrorNotification.AdminUserIds 是空的。Error notification is enabled on the webhook endpoint but ErrorNotification.AdminUserIds is empty.");
                 }
 
-                RequireService(endpoints, typeof(ILineMessagingClient), nameof(ILineMessagingClient) + "(錯誤通知要推播;請呼叫 services.AddLineMessaging(...))");
+                RequireMessaging(endpoints, channel, "錯誤通知要推播;請呼叫 services.AddLineMessaging(...)");
             }
 
             return new EventPlan(
@@ -455,7 +489,8 @@ public static partial class LineWebhookEndpointRouteBuilderExtensions
                 maintenance.ReplyText,
                 notification.Enabled,
                 notificationAdmins,
-                notification.IncludeStackTrace);
+                notification.IncludeStackTrace,
+                channel);
         }
 
         /// <summary>

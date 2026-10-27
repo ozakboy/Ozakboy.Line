@@ -11,6 +11,9 @@ namespace Ozakboy.Line.Tests;
 [TestClass]
 public sealed class LineWebhookHandlerTests
 {
+    private static readonly string[] OnlyOnMessage = ["OnMessageAsync"];
+    private static readonly string[] OnlyOnUnknownEvent = ["OnUnknownEventAsync"];
+
     [TestMethod]
     [DataRow(LineWebhookMessageTypes.Text, "OnTextMessageAsync")]
     [DataRow(LineWebhookMessageTypes.Image, "OnImageMessageAsync")]
@@ -35,7 +38,7 @@ public sealed class LineWebhookHandlerTests
 
         await Dispatch(handler, Event(LineWebhookEventTypes.Message, "hologram"));
 
-        CollectionAssert.AreEqual(new[] { "OnMessageAsync" }, handler.Calls);
+        CollectionAssert.AreEqual(OnlyOnMessage, handler.Calls);
     }
 
     [TestMethod]
@@ -45,7 +48,7 @@ public sealed class LineWebhookHandlerTests
 
         await Dispatch(handler, Event(LineWebhookEventTypes.Message, messageType: null));
 
-        CollectionAssert.AreEqual(new[] { "OnMessageAsync" }, handler.Calls);
+        CollectionAssert.AreEqual(OnlyOnMessage, handler.Calls);
     }
 
     [TestMethod]
@@ -80,7 +83,7 @@ public sealed class LineWebhookHandlerTests
 
         await Dispatch(handler, Event(eventType));
 
-        CollectionAssert.AreEqual(new[] { "OnUnknownEventAsync" }, handler.Calls);
+        CollectionAssert.AreEqual(OnlyOnUnknownEvent, handler.Calls);
     }
 
     [TestMethod]
@@ -171,9 +174,10 @@ public sealed class LineWebhookHandlerTests
         var messages = await context.ReplyAsync([new TextMessage("x")], CancellationToken.None);
 
         Assert.IsTrue(text.IsFailure);
-        Assert.AreEqual(LineErrorCodes.WebhookNoReplyToken, text.Error.Code);
-        Assert.AreEqual(LineErrorCodes.WebhookNoReplyToken, messages.Error.Code);
-        Assert.AreEqual("line.webhook.no_reply_token", LineErrorCodes.WebhookNoReplyToken, "錯誤代碼字面值是契約。");
+        Assert.IsNotNull(text.Error);
+        Assert.IsNotNull(messages.Error);
+        Assert.AreEqual("line.webhook.no_reply_token", text.Error.Code, "錯誤代碼字面值是契約。");
+        Assert.AreEqual("line.webhook.no_reply_token", messages.Error.Code);
         Assert.AreEqual(0, recorder.Sends.Count);
     }
 
@@ -188,9 +192,10 @@ public sealed class LineWebhookHandlerTests
         var third = await context.ReplyAsync([new TextMessage("三")], CancellationToken.None);
 
         Assert.IsTrue(first.IsSuccess);
-        Assert.AreEqual(LineErrorCodes.WebhookReplyTokenUsed, second.Error.Code);
-        Assert.AreEqual(LineErrorCodes.WebhookReplyTokenUsed, third.Error.Code);
-        Assert.AreEqual("line.webhook.reply_token_used", LineErrorCodes.WebhookReplyTokenUsed, "錯誤代碼字面值是契約。");
+        Assert.IsNotNull(second.Error);
+        Assert.IsNotNull(third.Error);
+        Assert.AreEqual("line.webhook.reply_token_used", second.Error.Code, "錯誤代碼字面值是契約。");
+        Assert.AreEqual("line.webhook.reply_token_used", third.Error.Code);
         Assert.AreEqual(1, recorder.Sends.Count, "權杖只能用一次,第二次不送。");
     }
 
@@ -205,6 +210,8 @@ public sealed class LineWebhookHandlerTests
         var second = await context.ReplyTextAsync("二", CancellationToken.None);
 
         Assert.IsTrue(first.IsFailure);
+        Assert.IsNotNull(first.Error);
+        Assert.IsNotNull(second.Error);
         Assert.AreEqual("line.api.rejected", first.Error.Code);
         Assert.AreEqual(LineErrorCodes.WebhookReplyTokenUsed, second.Error.Code);
         Assert.AreEqual(1, recorder.Sends.Count);

@@ -33,11 +33,15 @@ public static class LineAutoReplyServiceCollectionExtensions
     /// </code>
     /// </example>
     /// <remarks>
-    /// 需要先註冊 <see cref="ILineMessagingClient"/>(<c>AddLineMessaging</c>):回覆要靠它送出去。
+    /// 需要先註冊 <see cref="ILineMessagingClient"/>(<c>AddLineMessaging</c>):回覆要靠它送出去;
+    /// 多 channel 時,規則的 <see cref="LineAutoReplyRule.ChannelName"/> 決定它適用哪些 channel,
+    /// 回覆則走 <see cref="ILineMessagingClientFactory"/> 取得的對應用戶端。
     /// 全部註冊為 singleton —— 檔案型儲存體的鎖是實例層級的,每次請求各拿一個等於沒有鎖。
     /// This needs <see cref="ILineMessagingClient"/> registered first, through <c>AddLineMessaging</c>: that is
-    /// what sends the reply. Everything is a singleton, because the file-backed store's lock is per instance and
-    /// one instance per request is no lock at all.
+    /// what sends the reply. With several channels, a rule's <see cref="LineAutoReplyRule.ChannelName"/> decides
+    /// which channels it applies to, and the reply goes through the matching client from
+    /// <see cref="ILineMessagingClientFactory"/>. Everything is a singleton, because the file-backed store's lock
+    /// is per instance and one instance per request is no lock at all.
     /// </remarks>
     public static IServiceCollection AddLineAutoReply(
         this IServiceCollection services,
@@ -70,7 +74,8 @@ public static class LineAutoReplyServiceCollectionExtensions
 
         services.TryAddSingleton<ILineAutoReplyService>(provider => new LineAutoReplyService(
             provider.GetRequiredService<ILineAutoReplyStore>(),
-            provider.GetRequiredService<ILineMessagingClient>(),
+            provider.GetService<ILineMessagingClient>(),
+            provider.GetService<ILineMessagingClientFactory>(),
             provider.GetRequiredService<IOptions<LineAutoReplyOptions>>(),
             provider.GetService<ILogger<LineAutoReplyService>>()));
 

@@ -35,6 +35,46 @@ public sealed class LineWebhookEndpointOptions
     public bool AutoReply { get; set; }
 
     /// <summary>
+    /// 固定使用的 channel 名稱;<see langword="null"/>(預設)表示沒有指定,沿用單一 channel 的行為。
+    /// A fixed channel name; <see langword="null"/> (the default) means none is specified and the
+    /// single-channel behaviour applies.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 驗簽用 <c>IOptionsMonitor&lt;LineMessagingOptions&gt;.Get(name).ChannelSecret</c>,回覆與推播走
+    /// <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory"/> 取得的對應用戶端。名稱不在
+    /// <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory.ChannelNames"/> 內一律回 401,
+    /// 而且在驗簽之前不碰任何狀態 —— 絕不拿空密鑰去驗一個不認得的 channel。
+    /// The signature is checked against <c>IOptionsMonitor&lt;LineMessagingOptions&gt;.Get(name).ChannelSecret</c>,
+    /// and replies and pushes go through the matching client from
+    /// <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory"/>. A name outside
+    /// <see cref="Ozakboy.Line.Messaging.ILineMessagingClientFactory.ChannelNames"/> is always a 401, and nothing is
+    /// touched before the check — an unknown channel is never verified against an empty secret.
+    /// </para>
+    /// <para>
+    /// 與 <see cref="ChannelRouteParameter"/> 互斥,兩者都設會在<b>掛端點當下</b>擲出
+    /// <see cref="InvalidOperationException"/>。空字串是預設 channel。
+    /// It is mutually exclusive with <see cref="ChannelRouteParameter"/>; setting both throws an
+    /// <see cref="InvalidOperationException"/> <b>while mapping</b>. The empty string is the default channel.
+    /// </para>
+    /// </remarks>
+    public string? ChannelName { get; set; }
+
+    /// <summary>
+    /// 從路由值取得 channel 名稱時的路由參數名(例如 <c>"channel"</c>,搭配樣式 <c>/line/webhook/{channel}</c>);
+    /// <see langword="null"/>(預設)表示不從路由取。
+    /// The route parameter that carries the channel name (<c>"channel"</c>, say, with the pattern
+    /// <c>/line/webhook/{channel}</c>); <see langword="null"/> (the default) means the route is not consulted.
+    /// </summary>
+    /// <remarks>
+    /// 行為同 <see cref="ChannelName"/>;路由值缺漏(選擇性參數沒給)視為空字串,即預設 channel。
+    /// 與 <see cref="ChannelName"/> 互斥。
+    /// It behaves as <see cref="ChannelName"/>; an absent route value (an optional parameter left out) counts as the
+    /// empty string, the default channel. It is mutually exclusive with <see cref="ChannelName"/>.
+    /// </remarks>
+    public string? ChannelRouteParameter { get; set; }
+
+    /// <summary>
     /// 維護模式:開啟時,非管理員的事件不交給處理常式也不跑自動回覆,只回一則維護中的文字。
     /// Maintenance mode: while on, a non-administrator's event reaches neither the handler nor auto reply and
     /// is answered with a maintenance text.
