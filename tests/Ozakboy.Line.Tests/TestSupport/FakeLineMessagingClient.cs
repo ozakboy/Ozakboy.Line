@@ -25,7 +25,7 @@ namespace Ozakboy.Line.Tests.TestSupport;
 /// This file is also compiled into <c>Ozakboy.Line.Mcp.Tests</c> as a link, so both projects share one
 /// implementation.
 /// </remarks>
-internal sealed class FakeLineMessagingClient : ILineMessagingClient
+internal sealed partial class FakeLineMessagingClient : ILineMessagingClient
 {
     /// <summary>
     /// 每一次 <see cref="ReplyRawJsonAsync"/> 的參數。

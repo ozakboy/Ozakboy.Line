@@ -21,7 +21,7 @@ namespace Ozakboy.Line;
 /// RateLimited and "is this worth retrying" never has to parse a code string.
 /// </para>
 /// </remarks>
-public static class LineErrorCodes
+public static partial class LineErrorCodes
 {
     /// <summary>
     /// 憑證未設定:沒有 channel id / channel secret / channel access token,請求根本沒有送出。

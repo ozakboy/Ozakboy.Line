@@ -11,7 +11,7 @@ namespace Ozakboy.Line;
 /// oversized request is rejected wholesale at the far end, costing a slice of quota on the way, whereas a local
 /// check can say exactly how many were supplied and how many are allowed.
 /// </remarks>
-public static class LineMessagingLimits
+public static partial class LineMessagingLimits
 {
     /// <summary>
     /// 單次 multicast 的收件者人數上限。

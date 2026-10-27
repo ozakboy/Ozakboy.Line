@@ -11,7 +11,7 @@ namespace Ozakboy.Line;
 /// the address a method is expected to call, and the documentation and the code read the same constants, so the
 /// docs cannot drift away from what is actually sent.
 /// </remarks>
-public static class LineEndpoints
+public static partial class LineEndpoints
 {
     /// <summary>
     /// LINE Login 的授權頁位址(使用者的瀏覽器會被導到這裡)。

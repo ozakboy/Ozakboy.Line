@@ -17,7 +17,7 @@ namespace Ozakboy.Line.Messaging;
 /// Every expected failure comes back as a <see cref="Result"/> rather than an exception. A spent quota, a user
 /// who blocked the account, an expired reply token: these are a messaging system's normal days, not defects.
 /// </remarks>
-public interface ILineMessagingClient
+public partial interface ILineMessagingClient
 {
     /// <summary>
     /// 推播訊息給單一對象。
