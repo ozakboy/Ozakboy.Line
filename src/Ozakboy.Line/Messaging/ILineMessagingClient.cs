@@ -216,7 +216,11 @@ public partial interface ILineMessagingClient
     /// </summary>
     /// <param name="richMenu">選單定義。The menu definition.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
-    /// <returns>選單識別碼。The menu identifier.</returns>
+    /// <returns>
+    /// 選單識別碼;區塊動作不合規格時為 <see cref="LineErrorCodes.InvalidAction"/> 失敗,且不送出請求。
+    /// The menu identifier; an area action that breaks the specification fails with
+    /// <see cref="LineErrorCodes.InvalidAction"/> and no request is sent.
+    /// </returns>
     Task<Result<string>> CreateRichMenuAsync(LineRichMenu richMenu, CancellationToken cancellationToken = default);
 
     /// <summary>

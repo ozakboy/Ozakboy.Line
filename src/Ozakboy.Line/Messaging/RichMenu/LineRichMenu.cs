@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.RichMenu;
 
@@ -51,4 +53,38 @@ public sealed class LineRichMenu
     /// </summary>
     [JsonPropertyName("areas")]
     public IList<LineRichMenuArea> Areas { get; } = [];
+
+    /// <summary>
+    /// 送出前的本地檢查:每個區塊的動作都要符合規格(標籤 ≤ 20 字、postback data ≤ 300、uri 協定白名單等)。
+    /// The local check before sending: every area's action must meet the specification (label of at most 20
+    /// characters, postback data of at most 300, a uri scheme from the allow-list, and so on).
+    /// </summary>
+    /// <returns>
+    /// 通過時為成功;第一個不合規格的動作回 <see cref="LineErrorCodes.InvalidAction"/> 失敗,
+    /// 訊息裡帶 <c>richMenu.areas[i]</c> 指出是第幾個區塊。
+    /// Success when it passes; the first action that breaks the specification fails with
+    /// <see cref="LineErrorCodes.InvalidAction"/>, the message naming <c>richMenu.areas[i]</c> to point at the area.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="Actions.RawAction"/> 不驗(逃生口,內容由呼叫端負責),所以 MCP 工具讀進來的選單(一律是 RawAction)
+    /// 不會在這裡被擋 —— 它們的最後防線仍是 LINE 自己的 validate 端點。
+    /// <see cref="Actions.RawAction"/> is not checked (it is the escape hatch, its content is the caller's
+    /// responsibility), so a menu an MCP tool reads in — always RawAction — is not stopped here; its last line of
+    /// defence is LINE's own validate endpoint.
+    /// </remarks>
+    public Result Validate()
+    {
+        for (var index = 0; index < Areas.Count; index++)
+        {
+            var checkedAction = Areas[index].Action.Validate(
+                LineMessagingLimits.MaxActionLabelLength,
+                string.Create(CultureInfo.InvariantCulture, $"richMenu.areas[{index}]"));
+            if (checkedAction.IsFailure)
+            {
+                return checkedAction;
+            }
+        }
+
+        return Result.Success();
+    }
 }

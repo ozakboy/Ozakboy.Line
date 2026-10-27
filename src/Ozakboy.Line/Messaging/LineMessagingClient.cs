@@ -427,6 +427,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
             return NotConfigured<string>();
         }
 
+        var actions = richMenu.Validate();
+        if (actions.IsFailure)
+        {
+            return actions.ToFailure<string>();
+        }
+
         var request = Authorize(new HttpRequestMessage(HttpMethod.Post, new Uri(LineEndpoints.RichMenu, UriKind.Absolute))
         {
             Content = JsonContent(JsonSerializer.SerializeToUtf8Bytes(richMenu, LineJson.Options)),
@@ -600,6 +606,15 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         if (!Options.IsConfigured)
         {
             return NotConfigured<string>();
+        }
+
+        // 先驗動作再建立:建立之後才發現動作不合規格,就得再收回一個已經佔額度的選單。
+        // Check the actions before creating: finding a bad one afterwards would mean taking back a menu that has
+        // already used up a slot.
+        var actions = menu.Validate();
+        if (actions.IsFailure)
+        {
+            return actions.ToFailure<string>();
         }
 
         var created = await CreateRichMenuAsync(menu, cancellationToken).ConfigureAwait(false);
@@ -801,6 +816,12 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         if (!Options.IsConfigured)
         {
             return Task.FromResult(Result.Failure(NotConfiguredError()));
+        }
+
+        var actions = richMenu.Validate();
+        if (actions.IsFailure)
+        {
+            return Task.FromResult(actions);
         }
 
         var request = Authorize(new HttpRequestMessage(HttpMethod.Post, new Uri(LineEndpoints.RichMenuValidate, UriKind.Absolute))
