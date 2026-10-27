@@ -1,0 +1,102 @@
+{
+  "source": "自擬的版面,每個容器欄位與元件欄位至少出現一次(影片、圖示、填充、文字片段、漸層、四區樣式、絕對定位);欄位順序對齊本套件的寫出順序 / a hand-made layout that uses every container and component field at least once (video, icon, filler, spans, gradient, all four area styles, absolute positioning); field order follows this package's writing order",
+  "retrieved": "n/a(自擬 / hand-made)",
+  "body": {
+    "type": "bubble",
+    "size": "giga",
+    "direction": "rtl",
+    "header": {
+      "type": "box",
+      "layout": "horizontal",
+      "contents": [
+        { "type": "text", "text": "標題 Title", "adjustMode": "shrink-to-fit", "flex": 1, "margin": "none", "position": "relative", "size": "lg", "align": "center", "gravity": "center", "wrap": false, "lineSpacing": "4px", "maxLines": 1, "weight": "bold", "color": "#FFFFFF", "style": "italic", "decoration": "underline", "scaling": true },
+        { "type": "filler", "flex": 2 }
+      ],
+      "flex": 1,
+      "spacing": "md",
+      "margin": "none",
+      "backgroundColor": "#06C755",
+      "borderColor": "#00000033",
+      "borderWidth": "light",
+      "cornerRadius": "md",
+      "width": "100%",
+      "maxWidth": "400px",
+      "height": "60px",
+      "maxHeight": "80px",
+      "paddingAll": "10px",
+      "paddingTop": "4px",
+      "paddingBottom": "4px",
+      "paddingStart": "8px",
+      "paddingEnd": "8px",
+      "justifyContent": "space-between",
+      "alignItems": "center",
+      "background": { "type": "linearGradient", "angle": "90deg", "startColor": "#FF0000", "endColor": "#0000FF", "centerColor": "#00FF00", "centerPosition": "50%" },
+      "action": { "type": "postback", "label": "header", "data": "a=1" }
+    },
+    "hero": {
+      "type": "video",
+      "url": "https://example.com/v.mp4",
+      "previewUrl": "https://example.com/v.png",
+      "altContent": { "type": "image", "url": "https://example.com/alt.png", "size": "full", "aspectRatio": "20:13", "aspectMode": "fit" },
+      "aspectRatio": "20:13",
+      "action": { "type": "uri", "label": "More", "uri": "https://example.com/more" }
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "text",
+          "contents": [
+            { "type": "span", "text": "Hello ", "color": "#111111", "size": "md", "weight": "regular", "style": "normal", "decoration": "none" },
+            { "type": "span", "text": "World", "weight": "bold", "decoration": "line-through" }
+          ]
+        },
+        {
+          "type": "box",
+          "layout": "baseline",
+          "contents": [
+            { "type": "icon", "url": "https://example.com/i.png", "margin": "sm", "position": "absolute", "offsetTop": "2px", "offsetBottom": "2px", "offsetStart": "2px", "offsetEnd": "2px", "size": "xs", "aspectRatio": "1:1", "scaling": false }
+          ],
+          "position": "absolute",
+          "offsetTop": "10px",
+          "offsetBottom": "10px",
+          "offsetStart": "10px",
+          "offsetEnd": "10px"
+        },
+        {
+          "type": "image",
+          "url": "https://example.com/a.png",
+          "flex": 1,
+          "margin": "lg",
+          "position": "relative",
+          "offsetTop": "1px",
+          "align": "start",
+          "gravity": "bottom",
+          "size": "5xl",
+          "aspectRatio": "1.91:1",
+          "aspectMode": "cover",
+          "backgroundColor": "#EEEEEE",
+          "action": { "type": "message", "label": "hi", "text": "hi" },
+          "animated": true
+        },
+        { "type": "separator", "margin": "xl", "color": "#CCCCCC" },
+        { "type": "spacer", "size": "md" }
+      ]
+    },
+    "footer": {
+      "type": "box",
+      "layout": "horizontal",
+      "contents": [
+        { "type": "button", "action": { "type": "message", "label": "OK", "text": "ok" }, "flex": 1, "margin": "sm", "position": "relative", "offsetStart": "1px", "height": "md", "style": "secondary", "color": "#AAAAAA", "gravity": "center", "adjustMode": "shrink-to-fit", "scaling": true }
+      ]
+    },
+    "styles": {
+      "header": { "backgroundColor": "#FFFFFF", "separator": false, "separatorColor": "#000000" },
+      "hero": { "backgroundColor": "#EEEEEE" },
+      "body": { "separator": true },
+      "footer": { "separatorColor": "#CCCCCC" }
+    },
+    "action": { "type": "uri", "label": "Bubble", "uri": "https://example.com/bubble" }
+  }
+}

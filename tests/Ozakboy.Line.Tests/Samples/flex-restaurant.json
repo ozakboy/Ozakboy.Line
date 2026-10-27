@@ -1,0 +1,72 @@
+{
+  "source": "LINE Flex Message Simulator 常見的餐廳卡片範例形狀(離線依記憶整理,位址改為 example.com;欄位順序對齊本套件的寫出順序) / shape of the restaurant card sample in the LINE Flex Message Simulator, transcribed offline with example.com addresses; field order follows this package's writing order",
+  "retrieved": "n/a(離線整理 / transcribed offline)",
+  "body": {
+    "type": "bubble",
+    "hero": {
+      "type": "image",
+      "url": "https://example.com/cafe.png",
+      "size": "full",
+      "aspectRatio": "20:13",
+      "aspectMode": "cover",
+      "action": { "type": "uri", "uri": "https://example.com/" }
+    },
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        { "type": "text", "text": "Brown Cafe", "size": "xl", "weight": "bold" },
+        {
+          "type": "box",
+          "layout": "baseline",
+          "contents": [
+            { "type": "icon", "url": "https://example.com/star-gold.png", "size": "sm" },
+            { "type": "icon", "url": "https://example.com/star-gold.png", "size": "sm" },
+            { "type": "icon", "url": "https://example.com/star-gold.png", "size": "sm" },
+            { "type": "icon", "url": "https://example.com/star-gold.png", "size": "sm" },
+            { "type": "icon", "url": "https://example.com/star-gray.png", "size": "sm" },
+            { "type": "text", "text": "4.0", "flex": 0, "margin": "md", "size": "sm", "color": "#999999" }
+          ],
+          "margin": "md"
+        },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "box",
+              "layout": "baseline",
+              "contents": [
+                { "type": "text", "text": "Place", "flex": 1, "size": "sm", "color": "#AAAAAA" },
+                { "type": "text", "text": "Flex Tower, 7-7-4 Midori-ku, Tokyo", "flex": 5, "size": "sm", "wrap": true, "color": "#666666" }
+              ],
+              "spacing": "sm"
+            },
+            {
+              "type": "box",
+              "layout": "baseline",
+              "contents": [
+                { "type": "text", "text": "Time", "flex": 1, "size": "sm", "color": "#AAAAAA" },
+                { "type": "text", "text": "10:00 - 23:00", "flex": 5, "size": "sm", "wrap": true, "color": "#666666" }
+              ],
+              "spacing": "sm"
+            }
+          ],
+          "spacing": "sm",
+          "margin": "lg"
+        }
+      ]
+    },
+    "footer": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        { "type": "button", "action": { "type": "uri", "label": "CALL", "uri": "https://example.com/call" }, "height": "sm", "style": "link" },
+        { "type": "button", "action": { "type": "uri", "label": "WEBSITE", "uri": "https://example.com/" }, "height": "sm", "style": "link" },
+        { "type": "box", "layout": "vertical", "contents": [], "margin": "sm" }
+      ],
+      "flex": 0,
+      "spacing": "sm"
+    }
+  }
+}

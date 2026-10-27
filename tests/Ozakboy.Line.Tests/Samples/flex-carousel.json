@@ -1,0 +1,72 @@
+{
+  "source": "LINE Flex Message Simulator 常見的商品輪播範例形狀(三張氣泡;離線依記憶整理;欄位順序對齊本套件的寫出順序) / shape of the product carousel sample in the LINE Flex Message Simulator (three bubbles), transcribed offline; field order follows this package's writing order",
+  "retrieved": "n/a(離線整理 / transcribed offline)",
+  "body": {
+    "type": "carousel",
+    "contents": [
+      {
+        "type": "bubble",
+        "size": "micro",
+        "hero": { "type": "image", "url": "https://example.com/p1.png", "size": "full", "aspectRatio": "320:213", "aspectMode": "cover" },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "text", "text": "Brown Cafe", "size": "sm", "weight": "bold" },
+            { "type": "text", "text": "Flex Tower", "margin": "sm", "size": "xs", "wrap": true, "color": "#8C8C8C" }
+          ],
+          "paddingAll": "13px"
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "button", "action": { "type": "uri", "label": "CALL", "uri": "https://example.com/1" }, "height": "sm", "style": "primary", "color": "#06C755" }
+          ]
+        }
+      },
+      {
+        "type": "bubble",
+        "size": "micro",
+        "hero": { "type": "image", "url": "https://example.com/p2.png", "size": "full", "aspectRatio": "320:213", "aspectMode": "cover" },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "text", "text": "Brown&Cony's Lodge", "size": "sm", "weight": "bold" },
+            { "type": "text", "text": "Hotel", "margin": "sm", "size": "xs", "wrap": true, "color": "#8C8C8C" }
+          ],
+          "paddingAll": "13px"
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "button", "action": { "type": "uri", "label": "BOOK", "uri": "https://example.com/2" }, "height": "sm", "style": "primary", "color": "#06C755" }
+          ]
+        }
+      },
+      {
+        "type": "bubble",
+        "size": "micro",
+        "hero": { "type": "image", "url": "https://example.com/p3.png", "size": "full", "aspectRatio": "320:213", "aspectMode": "cover" },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "text", "text": "Sally's Diner", "size": "sm", "weight": "bold" },
+            { "type": "text", "text": "Dinner", "margin": "sm", "size": "xs", "wrap": true, "color": "#8C8C8C" }
+          ],
+          "paddingAll": "13px"
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            { "type": "button", "action": { "type": "uri", "label": "RESERVE", "uri": "https://example.com/3" }, "height": "sm", "style": "primary", "color": "#06C755" }
+          ]
+        }
+      }
+    ]
+  }
+}

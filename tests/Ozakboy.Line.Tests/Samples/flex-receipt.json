@@ -1,0 +1,73 @@
+{
+  "source": "LINE Flex Message Simulator 常見的收據範例形狀(離線依記憶整理;欄位順序對齊本套件的寫出順序) / shape of the receipt sample in the LINE Flex Message Simulator, transcribed offline; field order follows this package's writing order",
+  "retrieved": "n/a(離線整理 / transcribed offline)",
+  "body": {
+    "type": "bubble",
+    "size": "mega",
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        { "type": "text", "text": "RECEIPT", "size": "sm", "weight": "bold", "color": "#1DB446" },
+        { "type": "text", "text": "Brown Store", "margin": "md", "size": "xxl", "weight": "bold" },
+        { "type": "text", "text": "Miraina Tower, 4-1-6 Shinjuku, Tokyo", "size": "xs", "wrap": true, "color": "#AAAAAA" },
+        { "type": "separator", "margin": "xxl" },
+        {
+          "type": "box",
+          "layout": "vertical",
+          "contents": [
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "contents": [
+                { "type": "text", "text": "Energy Drink", "flex": 0, "size": "sm", "color": "#555555" },
+                { "type": "text", "text": "$2.99", "size": "sm", "align": "end", "color": "#111111" }
+              ]
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "contents": [
+                { "type": "text", "text": "Chewing Gum", "flex": 0, "size": "sm", "color": "#555555" },
+                { "type": "text", "text": "$0.99", "size": "sm", "align": "end", "color": "#111111" }
+              ]
+            },
+            { "type": "separator", "margin": "xxl" },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "contents": [
+                { "type": "text", "text": "ITEMS", "size": "sm", "color": "#555555" },
+                { "type": "text", "text": "2", "size": "sm", "align": "end", "color": "#111111" }
+              ],
+              "margin": "xxl"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "contents": [
+                { "type": "text", "text": "TOTAL", "size": "sm", "color": "#555555" },
+                { "type": "text", "text": "$3.98", "size": "sm", "align": "end", "color": "#111111" }
+              ]
+            }
+          ],
+          "spacing": "sm",
+          "margin": "xxl"
+        },
+        { "type": "separator", "margin": "xxl" },
+        {
+          "type": "box",
+          "layout": "horizontal",
+          "contents": [
+            { "type": "text", "text": "PAYMENT ID", "flex": 0, "size": "xs", "color": "#AAAAAA" },
+            { "type": "text", "text": "#743289384279", "size": "xs", "align": "end", "color": "#AAAAAA" }
+          ],
+          "margin": "md"
+        }
+      ]
+    },
+    "styles": {
+      "footer": { "separator": true }
+    }
+  }
+}
