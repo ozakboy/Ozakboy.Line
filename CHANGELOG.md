@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-09-25
+## [0.2.0] - 2026-10-27
 
 Two more message types, the rest of the Messaging API's chat, audience and insight surface, and a local check for
 every new cap LINE enforces. No existing error code, category or method signature changed.
