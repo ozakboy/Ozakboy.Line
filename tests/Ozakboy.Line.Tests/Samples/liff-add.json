@@ -1,0 +1,7 @@
+{
+  "source": "Add LIFF app — POST /liff/v1/apps",
+  "retrieved": "依 LINE 官方文件的已知形狀整理,整理日期 2026-10-27(當時環境連不到 developers.line.biz,未逐字核對頁面);非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "liffId": "1234567890-AbcdEfgh"
+  }
+}

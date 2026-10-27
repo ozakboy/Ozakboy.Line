@@ -1,0 +1,34 @@
+{
+  "source": "Get all LIFF apps — GET /liff/v1/apps",
+  "retrieved": "依 LINE 官方文件的已知形狀整理,整理日期 2026-10-27(當時環境連不到 developers.line.biz,未逐字核對頁面);非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "apps": [
+      {
+        "liffId": "1234567890-AbcdEfgh",
+        "view": {
+          "type": "full",
+          "url": "https://example.com/myservice",
+          "moduleMode": false
+        },
+        "description": "Happy New York",
+        "features": {
+          "ble": true,
+          "qrCode": true
+        },
+        "permanentLinkPattern": "concat",
+        "scope": [
+          "profile",
+          "chat_message.write"
+        ],
+        "botPrompt": "none"
+      },
+      {
+        "liffId": "1234567890-WxyzAbcd",
+        "view": {
+          "type": "tall",
+          "url": "https://example.com/other"
+        }
+      }
+    ]
+  }
+}

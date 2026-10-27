@@ -25,4 +25,11 @@ public static class LineHttpClientNames
     /// The named client used for the LINE Messaging API.
     /// </summary>
     public const string Messaging = "Ozakboy.Line.Messaging";
+
+    /// <summary>
+    /// LIFF server API 用的具名用戶端(用 LINE Login channel 的權杖,所以與 Messaging 分開)。
+    /// The named client used for the LIFF server API, kept apart from Messaging because it carries the LINE Login
+    /// channel's token.
+    /// </summary>
+    public const string Liff = "Ozakboy.Line.Liff";
 }

@@ -179,7 +179,7 @@ public static class LineServiceCollectionExtensions
     /// which is the retry handler's job.
     /// </para>
     /// </remarks>
-    private static void ConfigureLinePipeline(HttpPipelineOptions options)
+    internal static void ConfigureLinePipeline(HttpPipelineOptions options)
     {
         options.EnableSigning = false;
         options.EnableRateLimiting = false;
@@ -198,7 +198,7 @@ public static class LineServiceCollectionExtensions
     /// five-character value masks every piece of log text containing those five characters — not protection, but
     /// a ruined log. <c>Ozakboy.Http</c> also rejects values that are too short during validation.
     /// </remarks>
-    private static void AddKnownSecret(HttpPipelineOptions options, string secret)
+    internal static void AddKnownSecret(HttpPipelineOptions options, string secret)
     {
         if (!string.IsNullOrWhiteSpace(secret) && secret.Length >= SecretMasker.MinimumKnownSecretLength)
         {

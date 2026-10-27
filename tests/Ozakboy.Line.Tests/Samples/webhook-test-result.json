@@ -1,0 +1,11 @@
+{
+  "source": "Test webhook endpoint — POST /v2/bot/channel/webhook/test",
+  "retrieved": "依 LINE 官方文件的已知形狀整理,整理日期 2026-10-27(當時環境連不到 developers.line.biz,未逐字核對頁面);非真實帳號資料,識別碼皆為佔位符。",
+  "body": {
+    "success": true,
+    "timestamp": "2020-09-30T05:38:20.031Z",
+    "statusCode": 200,
+    "reason": "OK",
+    "detail": "200"
+  }
+}
