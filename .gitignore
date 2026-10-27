@@ -36,3 +36,6 @@ desktop.ini
 *.pem
 *.pfx
 *.key
+
+# ── Claude Code 代理的暫時 worktree(工具產物,絕不進版控)──
+.claude/worktrees/
