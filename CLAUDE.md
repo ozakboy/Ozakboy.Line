@@ -39,11 +39,13 @@ Ozakboy.Line/
   src/Ozakboy.Line/                     核心(PackageId=Ozakboy.Line)
     Line{Endpoints,ErrorCodes,ErrorDataKeys,MessagingLimits,Json,Http,ApiErrorMapper}.cs
                   (Endpoints / ErrorCodes / MessagingLimits 另拆 partial:.Channel / .Liff / .Stats / .RichMenuBatch /
-                  .Batch / .Messages,依功能分檔)
+                  .Batch / .Messages / .Postback / .Webhook,依功能分檔)
     LineUserProfile.cs  LineHttpClientNames.cs  LineServiceCollectionExtensions.cs
+    LineChannel{Names,Registrations}.cs(多 channel:具名登記與「同名取代」的共用工具,0.4.0)
     Login/        LineLoginOptions / LineLoginClient / LineIdTokenValidator / LinePkce / 回應模型
     Messaging/    LineMessagingOptions / LineMessagingClient(+ .Chat / .Narrowcast / .Insight / .Channel / .Stats /
-                  .RichMenuBatch / .Bulk 七個 partial,ILineMessagingClient 同樣分檔)
+                  .RichMenuBatch / .Bulk 七個 partial,ILineMessagingClient 同樣分檔,另有 .Identity 放 ChannelName)
+                  ILineMessagingClientFactory / LineMessagingClientFactory(多 channel 的工廠)
                   回應模型 / LinePushOptions / LineQuickReply(+Item)/ LineMessageSender / LineUserIdsPage
                   LineGroupSummary / LineMessageValidationTarget / LineWebhookEndpointInfo / LineWebhookTestResult
                   LineBulkSend{Result,RetryKey,ErrorDataKeys}
@@ -60,24 +62,33 @@ Ozakboy.Line/
       Insight/    LineMessageDeliveryInsight / LineFollowersInsight / LineDemographicInsight(+ 五種百分比項目)
                   / LineMessageDeliveryCount / LineMessageEventInsight(+ Overview / Message / Click)/ 統計單位回應
     Liff/         ILineLiffClient / LineLiffClient / LineLiffOptions / LineLiffApp(+ View / ViewType / Features)
-                  / LineLiffServiceCollectionExtensions(AddLineLiff 兩個多載)
+                  / LineLiffServiceCollectionExtensions(AddLineLiff 具名與未具名多載)
+                  / ILineLiffClientFactory / LineLiffClientFactory
     Webhook/      LineWebhookSignature / LineWebhookParser / LineWebhookContentProvider / LineWebhookVideoPlayComplete
                   事件模型 / 型別常數 / Beacon / Link / Membership / Unsend / Mention / Emoji / ImageSet 等強型別
+      Handling/   LineWebhookHandler(抽象基底,21 個 On*Async)/ LineWebhookContext(單一事件的脈絡、一次性回覆、postback 還原)
+    Postback/     ILinePostbackDataStore / InMemory / JsonFile / LinePostbackData{Entry,Options,Token,Resolver,StoreSupport}
+                  / LinePostbackDataServiceCollectionExtensions(AddLinePostbackData)
     Templates/    LineMessageTemplate / LineTemplateVariables / LineTemplateRenderer / store 與 DI
-    AutoReply/    LineAutoReplyRule / Matcher / Service / Outcome / store 與 DI
+    AutoReply/    LineAutoReplyRule(含 ChannelName)/ Matcher(含 ForChannel)/ Service / Outcome / store 與 DI
     Storage/      JsonFileStore(internal,原子寫入 + 讀寫鎖)/ LineStoreIds
   src/Ozakboy.Line.AspNetCore/          整合(PackageId=Ozakboy.Line.AspNetCore)
     LineLoginAuthentication{Defaults,Options,Handler,Extensions}.cs  LineClaimTypes.cs
-    Webhook/      LineWebhookHttpRequestExtensions / LineWebhookEndpointRouteBuilderExtensions
-                  LineWebhookEndpointOptions / LineWebhookItems
+    Webhook/      LineWebhookHttpRequestExtensions / LineWebhookEndpointRouteBuilderExtensions(+ .Handling:
+                  泛型 THandler 多載、維護模式、錯誤通知)/ LineWebhookChannelSelection(internal,channel 挑選方式快照)
+                  LineWebhookEndpointOptions / LineWebhookItems / LineWebhookMaintenanceOptions
+                  / LineWebhookErrorNotificationOptions / LineWebhookServiceCollectionExtensions(AddLineWebhookHandler)
   src/Ozakboy.Line.Mcp/                 MCP 工具組(PackageId=Ozakboy.Line.Mcp)
     LineMcp{Options,SendMode,Json,Messages,RichMenu,DailyLimit,StoreOptions,HttpClientNames}.cs
     LineMcp{ServiceCollection,ServerBuilder,ApplicationBuilder,EndpointRouteBuilder}Extensions.cs
     LineMcp{KeyGate,WellKnownNotFound}Middleware.cs
     Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / ILineMcpOutboxService / Service
     LineMcpAggregationUnit.cs(送出工具的統計單位檢查與選項轉換)
+    LineMcpClients.cs(依 LineMcpOptions.ChannelName 取 Messaging / LIFF 用戶端)
+    LineMcpUnavailableMessagingClient.cs(channel 不存在時的 DispatchProxy 替身,每個方法回 not_configured)
     Tools/        Line{Info,Send,Outbox,RichMenu,Liff,AutoReply,Template}Tools
-  tests/Ozakboy.Line.Tests/             核心測試(離線;Samples/*.json 是依官方文件整理的回應樣本,source 欄位註明端點)
+  tests/Ozakboy.Line.Tests/             核心測試(離線;Samples/*.json 是依官方文件整理的回應樣本,source 欄位註明端點;
+                                        TestSupport/RecordingLineMessagingClient.cs 是 DispatchProxy 的記錄用假用戶端)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
   tests/Ozakboy.Line.Mcp.Tests/         MCP 測試(工具直接 new + TestHost 驗金鑰閘,離線;FakeLineLiffClient 在 TestSupport/)
 ```
@@ -135,6 +146,12 @@ Ozakboy.Line/
 - **MCP 金鑰閘驗證失敗一律回 404**,不得改成 401/403(那等於確認端點存在);未設 `ApiKey` = 功能關閉、整個子樹 404;比對必須用 `CryptographicOperations.FixedTimeEquals`。
 - **MCP 工具名稱(`line_*`)是契約**:外部 AI 的提示詞與流程綁在上面,發佈後不改名。要表達新能力請加新工具。0.3.0 新增的七個——`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`、`line_list_liff_apps`、`line_create_liff_app`、`line_delete_liff_app`——同樣適用。
 - **MCP 的 LIFF 工具與統計單位**(0.3.0):LIFF 工具在 `ILineLiffClient` 未註冊(宿主沒呼叫 `AddLineLiff`)時**照樣掛上並回 `line.not_configured`**,不是消失;建立 / 刪除 LIFF 是帳號設定變更,與 `line_replace_rich_menu` 一樣**走待審佇列**(`LineMcpOutboxKind.LiffCreate = 4` / `LiffDelete = 5`,接在既有數值之後以相容 0.2.0 的 JSON 檔;payload 存 viewType / url / description / botPrompt 或 liffId)——Review 模式只排佇列、核准時由 `LineMcpOutboxService` 依 kind 呼叫 `ILineLiffClient`,Direct 模式**先執行再記錄**,每日建立上限照常以 CreatedAt 計數,執行時寫一行 `ILogger`;核准時 `ILineLiffClient` 未註冊 → 項目標 `Failed`(`line.not_configured`);`line_list_liff_apps` 是唯讀直接查;四個查詢類新工具唯讀、不計每日額度,`line_get_delivery_stats` 四種管道都要回、`unready` 如實回報(`success` 為 null 不是 0);三個送出工具的 `customAggregationUnit` 在**提出時**就檢查,並存在待發項目的 `PayloadJson`(欄位 `customAggregationUnit`,舊項目沒有此欄位照常核准)、核准時才帶進 `LinePushOptions`。
+- **多 channel 是契約**(0.4.0):空字串是預設 channel;**具名**註冊只註冊 keyed 服務,**未具名** = keyed("") + unkeyed(同一個實例);同名後註冊**整個取代**(設定委派、keyed 服務、登記項目都先移除再加,不疊加);具名 channel 的 `line.not_configured` 同樣成立(憑證不齊就一個請求都不送);`ILineMessagingClient.ChannelName` 是**預設介面成員**(舊實作不必改);webhook 的未知 channel **一律 401,且在驗簽前不觸碰任何狀態**(不讀 body、不取 `IOptionsMonitor`,絕不拿空密鑰驗簽);`LineWebhookItems.ChannelName` 的鍵名字串是契約,只在驗簽通過後才放值。`ChannelName` 與 `ChannelRouteParameter` 互斥(掛端點當下擲 `InvalidOperationException`);路由參數缺漏(選擇性參數沒給)= 空字串 = 預設 channel;整批內容的多載接 `LineWebhookEndpointOptions` 的形式刻意排在處理常式**之後**,排前面會與逐事件多載的 `Action<LineWebhookEndpointOptions>?` 在 `null` / 未標型別 lambda 下歧義。
+- **事件分派與回覆權杖是契約**(0.4.0):message 事件**先** `OnMessageAsync` 再細分(`OnTextMessageAsync` …),未知型別走 `OnUnknownEventAsync`;基底類別**不吞例外**,隔離是端點的責任(單一事件擲例外只記錄,狀態碼契約不變)。回覆權杖一次性:任何**通過本地檢查而送出**的回覆都算用掉(即使 LINE 拒絕 —— 權杖是否被消耗無從得知),第二次在本地回 `line.webhook.reply_token_used` 且不送;事件沒有權杖回 `line.webhook.no_reply_token`;兩者都**不擲例外**。
+- **維護模式與錯誤通知是契約**(0.4.0):維護模式看 `Source.UserId`(群組事件也一樣,沒有 `UserId` 視為非管理員);被擋的事件不進處理常式、不跑自動回覆;無回覆權杖或 `mode=standby` 的被擋事件**不回**。錯誤通知用 **push**(不是 reply),管理員並行、各自失敗,整體 10 秒逾時,整則 ≤ 5000 字(不切斷代理對),**絕不改變 200**。選項在**掛端點當下快照**(之後改物件不生效);`Enabled` 但白名單空 / `ReplyText` 空白 / handler 或用戶端未註冊 → 掛端點當下擲例外。批次內每個事件跑自動回覆**之前**先清掉上一個事件的 `Items[AutoReplyOutcome]`(自動回覆失敗時契約是「不放值」)。
+- **postback 暫存是契約**(0.4.0):代碼前綴 `ozl:`、全長 36 字(32 個小寫 hex)**不可改**(已發出去的按鈕靠它辨識);`PostbackAction.CreateStoredAsync` **短資料也照存**(呼叫端不必依長度分支);store 一律註冊為 **singleton**,JSON 版 `IDisposable`;**找不到與過期是同一個失敗**(`line.postback.expired`,免得外人能分辨「猜中過」與「沒有」);資料超過 store 上限為 `line.validation.postback_data_too_long`。暫存資料與一般 postback `Data` 一樣**沒有簽章**,不能單靠它做權限判斷,必須拿 `Source.UserId` 回頭查自己的資料。`LineWebhookContext.ResolvePostbackDataAsync`:非 postback → `line.webhook.not_postback`;`Data` 不是代碼 → 原樣成功;是代碼但沒有 store → `line.not_configured`。
+- **`ImagemapMessage.ForSingleImage` 是實驗性**(0.4.0):位址尾端補 `?`(已含 query 補 `&`,尾端已是 `?` / `&` 不補)、含 `#` 拒絕;動作範圍換成整張圖(複製一份,不改傳入物件)。它依賴 **LINE 會在底圖位址後接 `/{width}`、且伺服器忽略多出的 query**,官方沒有保證 —— 不要把它寫成穩定契約的賣點。
+- **自動回覆與 MCP 的 channel 是契約**(0.4.0):`LineAutoReplyRule.ChannelName` 為 null 或空 = **所有 channel**(含舊資料缺省);比對前只留下 `ChannelName` 空或等於目前 channel 的規則(序數比較),挑選順序契約不變;`HandleAsync(evt)` = 預設 channel,`HandleAsync(evt, channelName)` 未註冊的名稱回 `line.not_configured`(預設介面實作只認預設 channel,不把別的 channel 當預設處理);服務的 `{{displayName}}` 查詢走同一個 channel 的用戶端。MCP 的 `LineMcpOptions.ChannelName`(預設空字串)決定所有工具與 `LineMcpOutboxService` 用哪個 channel;**預設 channel 優先用直接註冊的 `ILineMessagingClient`**(沒有工廠 / 替換了用戶端的舊宿主照常可用),**具名 channel 一律走工廠,沒有工廠或名稱未註冊就是 `line.not_configured` —— 絕不退回別的帳號**(送出類工具拿錯帳號比送不出去嚴重得多);送出類工具與 `line_replace_rich_menu` 在**提出時**就擋,不排進佇列。`line_get_bot_info` 輸出含 `channelName`。
 
 ## 本專案特有規則(踩坑紀錄)
 
@@ -162,5 +179,7 @@ Ozakboy.Line/
 - **`ModelContextProtocol` 的 `IMcpServerBuilder` 在 `Microsoft.Extensions.DependencyInjection` 命名空間**,不在 `ModelContextProtocol.Server`。
 - **平面檔 store(`JsonFileStore<T>`)持有 `SemaphoreSlim`**,所以它與三個檔案型 store 都實作 `IDisposable`,由容器釋放;它們一律註冊為 **singleton** —— 鎖是實例層級的,每次請求各拿一個等於沒有鎖。
 - **自動回覆的 `{{displayName}}` 只在規則真的用到時才查個人檔案**,查不到以空字串代入而不讓整個回覆失敗:為了一個名字讓歡迎訊息整個發不出去,是把小事變成大事。
+- **測試專案要零警告,而且不准用 `NoWarn` / `#pragma`**:CA1861 —— 常數陣列當引數(連單元素的 `new[] { "x" }` 也算)一律抽成 `static readonly` 欄位,或改成 `string.Join` 比對;MSTEST0032 —— 常數對常數的斷言(`Assert.AreEqual("line.x", LineErrorCodes.X)`)改成斷言執行期取得的值(`result.Error.Code`);CS8602 —— `Result.Error` 是可為 null 的,先 `Assert.IsNotNull(result.Error)` 再取 `.Code`。
+- **`RecordingLineMessagingClient`(`tests/Ozakboy.Line.Tests/TestSupport/`)是 `DispatchProxy` 實作的 `ILineMessagingClient`**:只認得 `ReplyAsync` / `ReplyTextAsync` / `PushAsync` / `PushTextAsync` 並記錄,其他任何成員(**包括 `ChannelName`**)擲 `NotSupportedException`,所以處理常式測試別讀 `context.Messaging.ChannelName`。它不隨介面長成員而需維護;AspNetCore 測試專案以**單檔** `<Compile Include=… Link=…>` 連結(只有這一個檔,不像 `FakeLineMessagingClient*.cs` 要萬用字元)。多 channel 測試要換掉某個 channel 的用戶端時,在 `AddLineMessaging(name, …)` 之後 `AddKeyedSingleton<ILineMessagingClient>(name, fake)`(最後註冊的贏,工廠走 keyed 解析)。MCP 的 `LineMcpUnavailableMessagingClient` 同樣是 `DispatchProxy`,所以不能 `sealed`(CA1852 用逐點 `#pragma` 處理,理由寫在旁邊)。
 - 分析器 `NoWarn`(在核心 csproj,每條都附了中文理由):`CA1054` / `CA1055` / `CA1056`(URI 維持 string,避免 `System.Uri` 正規化改掉 LINE 給的位址,尤其 redirect_uri 必須逐字相同)、`CA1716`(`to` 是 LINE 自己的欄位名)、`CA1819`(`LineContent.Bytes`)、`CA2000`(請求的擁有權轉移給 `LineHttp`)。`CA2227` 與 `CA1031` 用逐點 `#pragma` 處理,不全域關。
 - MCP 專案的 `NoWarn`:`CA1054` / `CA1055` / `CA1056`(理由同核心 —— 位址一律維持 string,MCP 工具的參數更是如此,那些值由外部 AI 提供,原樣傳遞才對得起 LINE 的逐字比對)、`CA1812`(兩個中介層由 `UseMiddleware<T>` 以反射具現化,分析器看不出來)。**`CA1716` 不在名單上**:MCP 專案裡的 `to` 是自己取的參數名,直接改名(`CountCreatedBetweenAsync` 的 `until`)而不是關規則。

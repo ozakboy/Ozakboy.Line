@@ -267,6 +267,8 @@ Rules are ordered by `Priority` first, smallest going first, and within a tie by
 
 A reply can use `{{text}}`, the message the user sent, and `{{displayName}}`, their display name, which is looked up only when a rule actually uses it. Regular expressions are matched under a 100-millisecond cap, and a timeout or an invalid expression counts as no match rather than throwing: one badly written rule should not turn the whole webhook into a 500, which would have LINE redeliver the entire batch.
 
+A rule can be pinned to one channel with `ChannelName`; empty means every channel, which is also how a rule stored before 0.4.0 reads back, so no upgrade silences a rule. Only the rules for the current channel are considered — the ordering above is unchanged — and the reply, and the `{{displayName}}` lookup, go through that channel's client. `HandleAsync(evt)` means the default channel, `HandleAsync(evt, channelName)` any other.
+
 Auto reply always uses a **reply token** rather than a push: a reply costs no quota, and auto reply is the heaviest consumer of quota there is.
 
 ---
@@ -459,6 +461,141 @@ await liff.DeleteAsync(liffId);
 
 ---
 
+## Multiple channels
+
+One site, several official accounts. Register each channel under a name; the unnamed registration is the **default channel**, whose name is the empty string.
+
+```csharp
+builder.Services.AddLineMessaging("shop", o =>
+{
+    o.ChannelAccessToken = builder.Configuration["Line:Shop:ChannelAccessToken"]!;
+    o.ChannelSecret = builder.Configuration["Line:Shop:ChannelSecret"]!;
+});
+builder.Services.AddLineMessaging("care", builder.Configuration.GetSection("Line:Care"));   // or bind a section
+builder.Services.AddLineLiff("shop", o => o.ChannelAccessToken = builder.Configuration["Line:Shop:LoginToken"]!);
+```
+
+```csharp
+public sealed class Notifier(ILineMessagingClientFactory lines)
+{
+    public Task NotifyAsync(string channel, string userId, string text) =>
+        lines.Get(channel).PushTextAsync(userId, text);     // Get throws for a name that is not registered
+}
+```
+
+- `ILineMessagingClientFactory` and `ILineLiffClientFactory` offer `Get(name)`, `Contains(name)` and `ChannelNames`. The same name always yields the same singleton client, and `ILineMessagingClient.ChannelName` says which channel a client is bound to (empty for the default).
+- A **named** registration is only keyed (`GetRequiredKeyedService<ILineMessagingClient>(name)`); the unnamed one is the keyed `""` entry **and** the plain `ILineMessagingClient`, the same instance. Registering a name again **replaces** the earlier one whole, so a stale secret cannot survive a channel swap.
+- Each channel has its own named `HttpClient` (`LineHttpClientNames.ForMessaging(name)` / `ForLiff(name)`), and `line.not_configured` applies per channel: a named channel without credentials sends nothing.
+
+### One webhook route per channel
+
+```csharp
+app.MapLineWebhook(
+    "/line/webhook/{channel}",
+    handler: async (payload, http, ct) => { /* … */ },
+    new LineWebhookEndpointOptions { ChannelRouteParameter = "channel" });   // or ChannelName = "shop" for a fixed one
+```
+
+The secret is read from `IOptionsMonitor<LineMessagingOptions>.Get(name)`, so each channel verifies with its own. **A name that is not in `ChannelNames` is a 401 before anything is touched** — no body read, no options fetched, and never a signature checked against an empty secret. Once the signature verifies, the name is in `HttpContext.Items[LineWebhookItems.ChannelName]` (an empty string for the default channel), the handler's `LineWebhookContext.ChannelName` carries it, and `LineWebhookContext.Messaging` is that channel's client. `ChannelName` and `ChannelRouteParameter` are mutually exclusive; setting both throws while mapping. With neither set, nothing changes: the default channel, as before. Auto reply, the maintenance reply and error notifications all go through the channel the event arrived on.
+
+---
+
+## Event handlers
+
+Derive from `LineWebhookHandler` instead of writing the `if` ladder yourself.
+
+```csharp
+public sealed class ShopHandler(IBookingService bookings) : LineWebhookHandler
+{
+    protected override Task OnTextMessageAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct) =>
+        context.ReplyTextAsync($"收到:{evt.Message!.Text}", ct);
+
+    protected override async Task OnPostbackAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct)
+    {
+        var data = await context.ResolvePostbackDataAsync(ct);          // a staged token is resolved, plain data returned as is
+        if (data.IsSuccess)
+        {
+            await bookings.HandleAsync(evt.Source.UserId!, data.GetValueOrThrow(), ct);
+        }
+    }
+
+    protected override Task OnFollowAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct) =>
+        context.ReplyTextAsync("歡迎加入!", ct);
+}
+```
+
+```csharp
+builder.Services.AddLineWebhookHandler<ShopHandler>();      // scoped, so a DbContext can be injected
+app.MapLineWebhook<ShopHandler>("/line/webhook");           // or (…, new LineWebhookEndpointOptions { … })
+```
+
+- A message event reaches `OnMessageAsync` first and then the type-specific method (`OnTextMessageAsync`, `OnImageMessageAsync`, …); a type this version does not know goes to `OnUnknownEventAsync`. There are 21 `On*Async` methods, each a no-op by default.
+- The base class does not swallow exceptions; isolating them is the endpoint's job, so the status-code contract is unchanged — a bad signature 401, an unparsable body 400, everything else 200.
+- `context.ReplyAsync` / `ReplyTextAsync` can send **once** per event. Any reply that passes the local checks and goes out counts as using the token, even if LINE then rejects it; a second one answers `line.webhook.reply_token_used` locally and sends nothing, and an event without a token answers `line.webhook.no_reply_token` — neither throws. For more, push through `context.Messaging`.
+- `context.Items` is a per-event bag, and `context.AutoReplyOutcome` is what auto reply did with the event.
+
+---
+
+## Maintenance mode and error notification
+
+```csharp
+app.MapLineWebhook<ShopHandler>("/line/webhook", new LineWebhookEndpointOptions
+{
+    Maintenance =
+    {
+        Enabled = true,
+        AdminUserIds = { "Uadmin…" },
+        ReplyText = "系統維護中,請稍後再試。",
+    },
+    ErrorNotification =
+    {
+        Enabled = true,
+        AdminUserIds = { "Uadmin…" },
+        IncludeStackTrace = false,
+    },
+});
+```
+
+- **Maintenance** looks at `Source.UserId`, group events included; an event with no `UserId` counts as a non-administrator. A held-back event reaches neither the handler nor auto reply and is answered with `ReplyText` — unless it has no reply token or its `mode` is `standby` (another module owns the conversation), in which case it is simply dropped. `HttpContext.Items[LineWebhookItems.MaintenanceSkipped]` is `true` when this request held something back.
+- **Error notification** pushes a short description to every administrator when a handler throws. Each push fails on its own, the whole thing is capped at ten seconds and 5000 characters, and it can never change the 200.
+- The options are copied when the endpoint is mapped. Mapping throws if either feature is enabled with an empty allow-list or a blank `ReplyText`, or if the handler or the client is not registered — at startup, not when the first user writes in. Both apply to the per-event overloads and `MapLineWebhook<THandler>`; the whole-payload overload leaves the division of work to you.
+
+---
+
+## Long postback data
+
+`PostbackAction` data is capped at 300 characters. Stage the long data in a store and put a short token in the button instead.
+
+```csharp
+builder.Services.AddLinePostbackData();                                              // in memory
+// builder.Services.AddLinePostbackData(o => o.UseJsonFile("data/line-postbacks.json"));   // survives a restart
+
+var action = await PostbackAction.CreateStoredAsync(store, "查看詳情", longJson, displayText: "查看詳情");
+// …later, in a handler:
+var data = await context.ResolvePostbackDataAsync(ct);    // line.postback.expired when missing or past its lifetime
+```
+
+- The token is `ozl:` followed by 32 lowercase hex characters, 36 in all; the prefix and length are fixed. `CreateStoredAsync` stages short data too, so the caller never has to branch on length.
+- A token the store cannot find and one that has expired are the **same** failure, `line.postback.expired`. Data over the store's cap (`LinePostbackDataOptions.MaxDataLength`) fails as `line.validation.postback_data_too_long`. `ILinePostbackDataStore.PurgeExpiredAsync` clears the dead entries.
+- The stores are singletons (the JSON one is `IDisposable`). A resolved value is exactly as **unsigned** as a plain `Data`: do not decide who may do what from it alone — look the event's `Source.UserId` up in your own records.
+
+---
+
+## Single-image imagemap (experimental)
+
+A normal imagemap needs the image served at 240 / 300 / 460 / 700 / 1040 pixels wide. `ImagemapMessage.ForSingleImage` takes one image and makes the whole of it the tap area.
+
+```csharp
+var map = ImagemapMessage.ForSingleImage(
+    "https://example.com/banner.png", "春季活動", height: 520,
+    new ImagemapUriAction("https://example.com/spring", new LineImagemapArea(0, 0, 1040, 520)));   // the area is replaced by the whole image
+await line.PushAsync(userId, [map.GetValueOrThrow()]);
+```
+
+A `?` is appended to the address (a `&` when it already carries a query), nothing is added when it already ends in `?` or `&`, and an address with a `#` is refused. **This leans on LINE appending `/{width}` to the base URL and on your server ignoring the resulting query string; LINE does not document it as a guarantee, hence experimental.** Check it on a real device before relying on it. The base image width is fixed at 1040, so the original needs to be at least that wide.
+
+---
+
 ## What is checked before anything is sent
 
 Every limit below fails on your machine with a named code and **no request is sent** — LINE's own answer to most of them is a 400 that says only "the request body has 1 error".
@@ -523,6 +660,8 @@ A daily cap sits on top of that — ten items by default, counted against the lo
 **The key gate.** The public address is `{prefix}/{ApiKey}`, with `/mcp/line` as the default prefix. The key travels in the path rather than a header, because most MCP connectors give the user one field for a URL and nowhere for a custom header. It is compared in fixed time, and **a failure answers 404 rather than 401 or 403**: a 401 or 403 tells the caller that something is here, and this endpoint's existence is not worth announcing. An unset `ApiKey` means the feature is off and the whole subtree is a 404; rotating the key means changing the setting and restarting.
 
 `UseLineMcpWellKnownNotFound()` answers a clean JSON 404 for everything under `/.well-known/`: an MCP connector probes `/.well-known/oauth-protected-resource` before connecting, and when that lands in MVC and comes back as an HTML sign-in page or a 302, the connector decides the site needs OAuth and cannot connect. ⚠ This gate covers the **whole `/.well-known` subtree**, so serving a `security.txt` later means handling it before this line.
+
+One MCP endpoint serves one channel: `LineMcpOptions.ChannelName` (empty, the default channel, unless set) picks the official account whose client every tool and the outbox service use, and `line_get_bot_info` reports it as `channelName`. A name that is not registered makes every tool answer `line.not_configured` and send nothing — it never falls back to another account, and the sending tools refuse at proposal time rather than queueing something that cannot be approved. For several accounts, mount one endpoint per account, each with its own key. The default channel prefers a directly registered `ILineMessagingClient`, so a host with no factory carries on working. `line_upsert_auto_reply` takes an optional `channelName` for the rule, and `line_test_auto_reply` tries a text against one channel's rules.
 
 A host that already runs its own MCP server just adds the set to it:
 
@@ -604,6 +743,7 @@ The four new reading tools (`line_get_webhook_info`, `line_test_webhook`, `line_
 | Rich menu batch | `ReplaceOrUnlinkRichMenusInBatchAsync` · `ValidateRichMenuBatchAsync` · `GetRichMenuBatchProgressAsync` (with `LineRichMenuBatchOperation.Link` / `Unlink` / `UnlinkAll`) |
 | Webhook endpoint | `GetWebhookEndpointAsync` · `SetWebhookEndpointAsync` · `TestWebhookEndpointAsync` |
 | Account linking and content | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
+| Identity | `ChannelName` (the channel the client is bound to; empty for the default) |
 
 Message types: `TextMessage` (with `Emojis`), `TextV2Message` (with `LineTextSubstitution`), `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
 
@@ -622,6 +762,21 @@ The `*RawJsonAsync` overloads accept either a single message object or an array 
 
 Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using the Login channel's token on its own named `HttpClient`.
 
+### Multiple channels, event handlers and postback staging
+
+| Member | What it does |
+| --- | --- |
+| `AddLineMessaging(name, …)` · `AddLineLiff(name, …)` | Register a named channel (keyed only); registering a name again replaces it. |
+| `ILineMessagingClientFactory` · `ILineLiffClientFactory` | `Get(name)` · `Contains(name)` · `ChannelNames`; the empty string is the default channel. |
+| `LineHttpClientNames.ForMessaging(name)` · `ForLiff(name)` | The named `HttpClient` of a channel. |
+| `LineWebhookHandler` | The abstract base with 21 `On*Async` methods; a message goes to `OnMessageAsync` first, an unknown type to `OnUnknownEventAsync`. |
+| `LineWebhookContext` | `Event` · `ChannelName` · `Messaging` · `AutoReplyOutcome` · `Items` · `ReplyAsync` · `ReplyTextAsync` · `ResolvePostbackDataAsync`. |
+| `AddLineWebhookHandler<T>()` · `MapLineWebhook<T>(pattern, options?)` | Register the handler (scoped) and map the endpoint that dispatches to it. |
+| `LineWebhookEndpointOptions` | `AutoReply` · `ChannelName` · `ChannelRouteParameter` · `Maintenance` · `ErrorNotification`. |
+| `ILinePostbackDataStore` | `StoreAsync` · `GetAsync` · `PurgeExpiredAsync`, in memory or in a JSON file; registered with `AddLinePostbackData`. |
+| `PostbackAction.CreateStoredAsync` · `LinePostbackDataResolver.ResolveAsync` · `LinePostbackDataToken` | Stage long data behind a short token, and turn the token back into data. |
+| `ImagemapMessage.ForSingleImage(url, altText, height, action)` | A single-image imagemap (experimental). |
+
 ### Templates and auto reply
 
 | Member | What it does |
@@ -635,7 +790,9 @@ Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using th
 | `LineAutoReplyMatcher.FindFirst(rules, mode)` | The lowest-priority `Follow` or `Fallback` rule. |
 | `LineAutoReplyMatcher.Validate(rule)` | The pattern, the regular expression, and the reply body, all at once. |
 | `ILineAutoReplyStore` | The same shape as `ILineTemplateStore`. |
-| `ILineAutoReplyService.HandleAsync(evt)` | Applies the rules to one webhook event: `Skipped`, `NoMatch`, or `Replied`. |
+| `LineAutoReplyMatcher.ForChannel(rules, channelName)` | The rules that apply to a channel: an empty `ChannelName`, or the same one. |
+| `ILineAutoReplyService.HandleAsync(evt)` | Applies the rules to one webhook event on the default channel: `Skipped`, `NoMatch`, or `Replied`. |
+| `ILineAutoReplyService.HandleAsync(evt, channelName)` | The same for another channel; an unregistered name is `line.not_configured`. |
 
 ### MCP (`Ozakboy.Line.Mcp`)
 
@@ -643,6 +800,7 @@ Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using th
 | --- | --- |
 | `AddLineMcp(configure, stores?)` | The settings, the outbox, the outbox service, and the named HTTP client used to fetch images. |
 | `AddLineMcpServer(configure, stores?)` | All of the above plus a stateless MCP server carrying just the LINE tools. |
+| `LineMcpOptions.ChannelName` · `LineMcpClients` | Which channel's clients the tools and the outbox service use; a missing channel is `line.not_configured`. |
 | `IMcpServerBuilder.WithLineTools()` | Adds the seven tool sets to an MCP server the host already has. |
 | `UseLineMcpKeyGate(prefix?)` | The key gate. **Must come before `UseRouting`.** |
 | `UseLineMcpWellKnownNotFound()` | A clean 404 for everything under `/.well-known/`. |
@@ -661,13 +819,16 @@ Outbox statuses: `PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected`
 | `HttpRequest.ReadLineWebhookAsync(secret)` | Reads the raw bytes, verifies, parses. |
 | `MapLineWebhook(pattern, handler)` | The endpoint. One overload per event, one for the whole payload. |
 | `MapLineWebhook(pattern, configure, handler)` | The same, with `LineWebhookEndpointOptions.AutoReply` to run auto reply first. |
+| `MapLineWebhook(pattern, handler, options)` | The whole-payload overload with `LineWebhookEndpointOptions`; of them only `ChannelName` and `ChannelRouteParameter` apply. |
 | `LineWebhookItems.AutoReplyOutcome` | The `HttpContext.Items` key the auto reply outcome lands under. |
+| `LineWebhookItems.ChannelName` | The channel a verified request belongs to (empty for the default); set only after the signature verifies. |
+| `LineWebhookItems.MaintenanceSkipped` | `true` when maintenance mode held an event back in this request. |
 | `LineWebhookEvent.Joined` / `Left` / `Beacon` / `Unsend` / `Link` / `Membership` | Typed payloads for member join and leave, beacons, unsent messages, account linking and membership events (`LineWebhookBeaconTypes`, `LineWebhookLinkResults`, `LineWebhookMembershipTypes` name the strings). |
 | `LineWebhookMessage.Emojis` / `Mention` / `ImageSet` / `QuotedMessageId` / `MarkAsReadToken` / `StickerResourceType` / `Keywords` | Typed message fields; anything unmodelled is still in `Raw`. |
 
 ### Error codes
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
 
 These are a public contract and do not change once published.
 

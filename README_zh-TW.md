@@ -267,6 +267,8 @@ app.MapLineWebhook("/line/webhook", o => o.AutoReply = true, async (evt, context
 
 回覆內容可用 `{{text}}`(使用者原訊息)與 `{{displayName}}`(顯示名稱,只有規則真的用到時才會去查個人檔案)。正規表示式的比對有 100 毫秒上限,逾時或表示式無效一律視為「不符」而不是擲出例外 —— 一條寫壞的規則不該讓整個 webhook 回 500,那會讓 LINE 重送整批事件。
 
+規則可以用 `ChannelName` 綁定一個 channel;空值代表所有 channel,0.4.0 之前存下的規則讀回來也是空值,所以升級不會讓任何一條規則突然不回話。比對時只考慮適用於目前 channel 的規則 —— 上面的挑選順序不變 —— 回覆與 `{{displayName}}` 的查詢都走該 channel 的用戶端。`HandleAsync(evt)` 是預設 channel,`HandleAsync(evt, channelName)` 是其他 channel。
+
 自動回覆一律走 **reply token** 而不是推播:回覆不計額度,而自動回覆是所有功能裡最會消耗額度的那一個。
 
 ---
@@ -459,6 +461,141 @@ await liff.DeleteAsync(liffId);
 
 ---
 
+## 多 channel
+
+一個站台、多個官方帳號。每個 channel 用名稱註冊;未具名的註冊是**預設 channel**,名稱是空字串。
+
+```csharp
+builder.Services.AddLineMessaging("shop", o =>
+{
+    o.ChannelAccessToken = builder.Configuration["Line:Shop:ChannelAccessToken"]!;
+    o.ChannelSecret = builder.Configuration["Line:Shop:ChannelSecret"]!;
+});
+builder.Services.AddLineMessaging("care", builder.Configuration.GetSection("Line:Care"));   // 或從設定檔區段綁定
+builder.Services.AddLineLiff("shop", o => o.ChannelAccessToken = builder.Configuration["Line:Shop:LoginToken"]!);
+```
+
+```csharp
+public sealed class Notifier(ILineMessagingClientFactory lines)
+{
+    public Task NotifyAsync(string channel, string userId, string text) =>
+        lines.Get(channel).PushTextAsync(userId, text);     // 名稱沒註冊時 Get 會擲例外
+}
+```
+
+- `ILineMessagingClientFactory` 與 `ILineLiffClientFactory` 提供 `Get(name)`、`Contains(name)` 與 `ChannelNames`。同一個名稱永遠拿到同一個 singleton 用戶端;`ILineMessagingClient.ChannelName` 說明這個用戶端綁在哪個 channel(預設是空字串)。
+- **具名**註冊只註冊成 keyed 服務(`GetRequiredKeyedService<ILineMessagingClient>(name)`);未具名的則同時是 keyed `""` 與一般的 `ILineMessagingClient`,而且是同一個實例。同名再註冊一次會**整個取代**先前那個,換 channel 時舊的密鑰不會殘留。
+- 每個 channel 有自己的具名 `HttpClient`(`LineHttpClientNames.ForMessaging(name)` / `ForLiff(name)`),`line.not_configured` 也是逐 channel 成立:沒給憑證的具名 channel 什麼都不送。
+
+### 每個 channel 一條 webhook 路由
+
+```csharp
+app.MapLineWebhook(
+    "/line/webhook/{channel}",
+    handler: async (payload, http, ct) => { /* … */ },
+    new LineWebhookEndpointOptions { ChannelRouteParameter = "channel" });   // 或用 ChannelName = "shop" 固定一個
+```
+
+密鑰從 `IOptionsMonitor<LineMessagingOptions>.Get(name)` 取,所以每個 channel 各驗各的。**名稱不在 `ChannelNames` 內,在碰任何東西之前就回 401** —— 不讀內容、不取選項,也絕不拿空密鑰去驗簽。簽章驗過之後,名稱放在 `HttpContext.Items[LineWebhookItems.ChannelName]`(預設 channel 是空字串),處理常式的 `LineWebhookContext.ChannelName` 帶著它,`LineWebhookContext.Messaging` 就是該 channel 的用戶端。`ChannelName` 與 `ChannelRouteParameter` 互斥,兩者都設會在掛端點當下擲例外。兩者都不設時完全沒變:仍是預設 channel。自動回覆、維護中的回覆與錯誤通知,都走事件所屬的那個 channel。
+
+---
+
+## 事件處理常式
+
+繼承 `LineWebhookHandler`,不必自己寫那串 `if`。
+
+```csharp
+public sealed class ShopHandler(IBookingService bookings) : LineWebhookHandler
+{
+    protected override Task OnTextMessageAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct) =>
+        context.ReplyTextAsync($"收到:{evt.Message!.Text}", ct);
+
+    protected override async Task OnPostbackAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct)
+    {
+        var data = await context.ResolvePostbackDataAsync(ct);          // 暫存代碼會還原,一般資料原樣回傳
+        if (data.IsSuccess)
+        {
+            await bookings.HandleAsync(evt.Source.UserId!, data.GetValueOrThrow(), ct);
+        }
+    }
+
+    protected override Task OnFollowAsync(LineWebhookEvent evt, LineWebhookContext context, CancellationToken ct) =>
+        context.ReplyTextAsync("歡迎加入!", ct);
+}
+```
+
+```csharp
+builder.Services.AddLineWebhookHandler<ShopHandler>();      // scoped,可以直接注入 DbContext
+app.MapLineWebhook<ShopHandler>("/line/webhook");           // 或 (…, new LineWebhookEndpointOptions { … })
+```
+
+- message 事件先進 `OnMessageAsync`,再進細分的方法(`OnTextMessageAsync`、`OnImageMessageAsync` …);這個版本不認得的型別走 `OnUnknownEventAsync`。共有 21 個 `On*Async`,預設都不做事。
+- 基底類別不吞例外;隔離是端點的責任,所以狀態碼契約不變 —— 驗簽失敗 401、內容讀不懂 400、其餘一律 200。
+- `context.ReplyAsync` / `ReplyTextAsync` 在一個事件上**只能送一次**。任何通過本地檢查而送出的回覆都算用掉權杖,即使 LINE 隨後拒絕;第二次在本地回 `line.webhook.reply_token_used` 且不送,沒有權杖的事件回 `line.webhook.no_reply_token` —— 兩者都不擲例外。要多送請走 `context.Messaging` 推播。
+- `context.Items` 是這個事件專用的暫存字典,`context.AutoReplyOutcome` 是自動回覆對這個事件做了什麼。
+
+---
+
+## 維護模式與錯誤通知
+
+```csharp
+app.MapLineWebhook<ShopHandler>("/line/webhook", new LineWebhookEndpointOptions
+{
+    Maintenance =
+    {
+        Enabled = true,
+        AdminUserIds = { "Uadmin…" },
+        ReplyText = "系統維護中,請稍後再試。",
+    },
+    ErrorNotification =
+    {
+        Enabled = true,
+        AdminUserIds = { "Uadmin…" },
+        IncludeStackTrace = false,
+    },
+});
+```
+
+- **維護模式**看 `Source.UserId`,群組事件也一樣;沒有 `UserId` 的事件視為非管理員。被擋下的事件既不進處理常式也不跑自動回覆,以 `ReplyText` 回覆 —— 除非它沒有回覆權杖或 `mode` 是 `standby`(別的模組正在接手對話),那種情況就直接丟掉不回。本次請求有事件被擋下時,`HttpContext.Items[LineWebhookItems.MaintenanceSkipped]` 為 `true`。
+- **錯誤通知**在處理常式擲出例外時,推播簡短說明給每一位管理員。每一次推播各自失敗,整體上限十秒、整則不超過 5000 字,而且絕不改變 200。
+- 選項在掛端點當下複製一份。任一功能開啟卻白名單是空的、`ReplyText` 空白,或處理常式 / 用戶端沒有註冊,掛端點當下就擲例外 —— 在啟動時,而不是第一位使用者傳訊息時。兩者都適用逐事件的多載與 `MapLineWebhook<THandler>`;整批內容的多載由你自己分工。
+
+---
+
+## postback 超長資料
+
+`PostbackAction` 的資料上限是 300 字元。把長資料暫存進儲存體,按鈕上只放一個短代碼。
+
+```csharp
+builder.Services.AddLinePostbackData();                                              // 記憶體
+// builder.Services.AddLinePostbackData(o => o.UseJsonFile("data/line-postbacks.json"));   // 重啟後仍在
+
+var action = await PostbackAction.CreateStoredAsync(store, "查看詳情", longJson, displayText: "查看詳情");
+// …之後在處理常式裡:
+var data = await context.ResolvePostbackDataAsync(ct);    // 找不到或超過有效期限時為 line.postback.expired
+```
+
+- 代碼是 `ozl:` 加 32 個小寫十六進位字元,共 36 字;前綴與長度是固定的。`CreateStoredAsync` 連短資料也照樣暫存,呼叫端不必再依長度分支。
+- 儲存體找不到的代碼與已過期的代碼是**同一個**失敗 `line.postback.expired`。資料超過儲存體上限(`LinePostbackDataOptions.MaxDataLength`)以 `line.validation.postback_data_too_long` 失敗。`ILinePostbackDataStore.PurgeExpiredAsync` 清掉過期的項目。
+- 儲存體一律是 singleton(JSON 版實作 `IDisposable`)。還原出來的值和一般的 `Data` 一樣**沒有簽章**:不要只靠它判斷誰能做什麼 —— 要拿事件的 `Source.UserId` 回頭查自己的資料。
+
+---
+
+## 單圖 imagemap(實驗性)
+
+一般的 imagemap 需要同一張圖準備 240 / 300 / 460 / 700 / 1040 像素寬的多種尺寸。`ImagemapMessage.ForSingleImage` 只用一張圖,整張都是點擊範圍。
+
+```csharp
+var map = ImagemapMessage.ForSingleImage(
+    "https://example.com/banner.png", "春季活動", height: 520,
+    new ImagemapUriAction("https://example.com/spring", new LineImagemapArea(0, 0, 1040, 520)));   // 範圍會被換成整張圖
+await line.PushAsync(userId, [map.GetValueOrThrow()]);
+```
+
+位址會補上一個 `?`(已經帶 query 的補 `&`),尾端本來就是 `?` 或 `&` 就不補,含 `#` 的位址直接拒絕。**這依賴 LINE 會在底圖位址後面接上 `/{width}`、而你的伺服器會忽略多出來的 query;LINE 沒有保證過這件事,所以標為實驗性。**要依賴它之前請先在真機上確認。底圖寬度固定是 1040,原圖至少要有這麼寬。
+
+---
+
 ## 送出之前檢查了什麼
 
 下表每一條都在你的機器上以具名代碼失敗,而且**一個請求都不送** —— LINE 自己對其中大多數的回應,是一個只說「請求內容有 1 個錯誤」的 400。
@@ -523,6 +660,8 @@ app.MapLineMcp();
 **金鑰閘。** 對外網址是 `{prefix}/{ApiKey}`(預設 prefix 為 `/mcp/line`),金鑰走路徑而不是標頭,因為多數 MCP 連接器只給使用者一個填網址的欄位。金鑰以定時比較驗證,**失敗一律回 404 而不是 401/403** —— 401/403 等於告訴對方「這裡確實有東西」,而這個端點的存在本身就不必對外說。沒設定 `ApiKey` = 功能關閉,整個子樹都是 404;金鑰輪替 = 改設定重啟。
 
 `UseLineMcpWellKnownNotFound()` 讓 `/.well-known/` 一律回乾淨的 JSON 404:MCP 連接器連線前會探測 `/.well-known/oauth-protected-resource`,那些請求若落到 MVC 拿到 HTML 登入頁或 302,連接器會判定這個站需要 OAuth 而連不上。⚠ 這道閘攔的是**整個 `/.well-known` 子樹**,日後要放 `security.txt` 得在這一行之前處理掉。
+
+一個 MCP 端點對應一個 channel:`LineMcpOptions.ChannelName`(沒設就是空字串,即預設 channel)決定所有工具與待發服務用哪個官方帳號的用戶端,`line_get_bot_info` 會以 `channelName` 回報它。名稱沒有註冊時,所有工具回 `line.not_configured` 且什麼都不送 —— 絕不退回別的帳號,送出類工具也在提出時就拒絕,而不是排進一個永遠核准不了的佇列。要操作多個帳號,各掛一個端點、各用自己的金鑰。預設 channel 優先用直接註冊的 `ILineMessagingClient`,所以沒有工廠的舊宿主照常可用。`line_upsert_auto_reply` 可選填規則的 `channelName`,`line_test_auto_reply` 可以拿一段文字試跑某個 channel 的規則。
 
 宿主已經有自己的 MCP server 時,用 `WithLineTools()` 把這一組掛上去就好:
 
@@ -604,6 +743,7 @@ builder.Services.AddMcpServer()
 | 圖文選單批次 | `ReplaceOrUnlinkRichMenusInBatchAsync` · `ValidateRichMenuBatchAsync` · `GetRichMenuBatchProgressAsync`(配 `LineRichMenuBatchOperation.Link` / `Unlink` / `UnlinkAll`) |
 | Webhook 位址 | `GetWebhookEndpointAsync` · `SetWebhookEndpointAsync` · `TestWebhookEndpointAsync` |
 | 帳號連結與內容 | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
+| 身分 | `ChannelName`(用戶端綁定的 channel;預設為空字串) |
 
 訊息型別:`TextMessage`(含 `Emojis`)、`TextV2Message`(配 `LineTextSubstitution`)、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
 
@@ -622,6 +762,21 @@ builder.Services.AddMcpServer()
 
 以 `AddLineLiff(options)` 或 `AddLineLiff(configuration)` 註冊,走自己的具名 `HttpClient`,用 Login 頻道的權杖。
 
+### 多 channel、事件處理常式與 postback 暫存
+
+| 成員 | 做什麼 |
+| --- | --- |
+| `AddLineMessaging(name, …)` · `AddLineLiff(name, …)` | 註冊具名 channel(只註冊 keyed);同名再註冊會取代。 |
+| `ILineMessagingClientFactory` · `ILineLiffClientFactory` | `Get(name)` · `Contains(name)` · `ChannelNames`;空字串是預設 channel。 |
+| `LineHttpClientNames.ForMessaging(name)` · `ForLiff(name)` | 某個 channel 的具名 `HttpClient`。 |
+| `LineWebhookHandler` | 有 21 個 `On*Async` 的抽象基底;message 事件先進 `OnMessageAsync`,不認得的型別走 `OnUnknownEventAsync`。 |
+| `LineWebhookContext` | `Event` · `ChannelName` · `Messaging` · `AutoReplyOutcome` · `Items` · `ReplyAsync` · `ReplyTextAsync` · `ResolvePostbackDataAsync`。 |
+| `AddLineWebhookHandler<T>()` · `MapLineWebhook<T>(pattern, options?)` | 註冊處理常式(scoped)並掛上分派給它的端點。 |
+| `LineWebhookEndpointOptions` | `AutoReply` · `ChannelName` · `ChannelRouteParameter` · `Maintenance` · `ErrorNotification`。 |
+| `ILinePostbackDataStore` | `StoreAsync` · `GetAsync` · `PurgeExpiredAsync`,記憶體或 JSON 檔實作;以 `AddLinePostbackData` 註冊。 |
+| `PostbackAction.CreateStoredAsync` · `LinePostbackDataResolver.ResolveAsync` · `LinePostbackDataToken` | 把長資料暫存在短代碼後面,再把代碼還原成資料。 |
+| `ImagemapMessage.ForSingleImage(url, altText, height, action)` | 單圖 imagemap(實驗性)。 |
+
 ### 訊息範本與自動回覆
 
 | 成員 | 做什麼 |
@@ -635,7 +790,9 @@ builder.Services.AddMcpServer()
 | `LineAutoReplyMatcher.FindFirst(rules, mode)` | 取 `Follow` / `Fallback` 規則中優先序最小的一條。 |
 | `LineAutoReplyMatcher.Validate(rule)` | 樣式、正規表示式、回覆內容三件事一起驗。 |
 | `ILineAutoReplyStore` | 形狀與 `ILineTemplateStore` 相同。 |
-| `ILineAutoReplyService.HandleAsync(evt)` | 對一個 webhook 事件套用規則,回 `Skipped` / `NoMatch` / `Replied`。 |
+| `LineAutoReplyMatcher.ForChannel(rules, channelName)` | 適用於某個 channel 的規則:`ChannelName` 為空,或與之相同。 |
+| `ILineAutoReplyService.HandleAsync(evt)` | 把規則套用到預設 channel 的一個 webhook 事件:`Skipped`、`NoMatch` 或 `Replied`。 |
+| `ILineAutoReplyService.HandleAsync(evt, channelName)` | 同上,但針對其他 channel;名稱未註冊為 `line.not_configured`。 |
 
 ### MCP(`Ozakboy.Line.Mcp`)
 
@@ -643,6 +800,7 @@ builder.Services.AddMcpServer()
 | --- | --- |
 | `AddLineMcp(configure, stores?)` | 設定、待發佇列、待發項目服務、抓圖用的具名 HTTP 用戶端。 |
 | `AddLineMcpServer(configure, stores?)` | 上面全部,加一個只掛 LINE 工具的 stateless MCP server。 |
+| `LineMcpOptions.ChannelName` · `LineMcpClients` | 工具與待發服務用哪個 channel 的用戶端;channel 不存在為 `line.not_configured`。 |
 | `IMcpServerBuilder.WithLineTools()` | 把七組工具加進宿主既有的 MCP server。 |
 | `UseLineMcpKeyGate(prefix?)` | 金鑰閘,**必須在 `UseRouting` 之前**。 |
 | `UseLineMcpWellKnownNotFound()` | `/.well-known/` 一律乾淨 404。 |
@@ -661,13 +819,16 @@ builder.Services.AddMcpServer()
 | `HttpRequest.ReadLineWebhookAsync(secret)` | 讀原始位元組、驗簽、解析。 |
 | `MapLineWebhook(pattern, handler)` | 端點本身。逐事件與整批各一個多載。 |
 | `MapLineWebhook(pattern, configure, handler)` | 同上,另可用 `LineWebhookEndpointOptions.AutoReply` 先跑一次自動回覆。 |
+| `MapLineWebhook(pattern, handler, options)` | 整批內容的多載,可帶 `LineWebhookEndpointOptions`;其中只有 `ChannelName` 與 `ChannelRouteParameter` 生效。 |
 | `LineWebhookItems.AutoReplyOutcome` | 自動回覆結果在 `HttpContext.Items` 裡的鍵名。 |
+| `LineWebhookItems.ChannelName` | 驗簽通過的請求所屬的 channel(預設為空字串);驗簽通過之後才放值。 |
+| `LineWebhookItems.MaintenanceSkipped` | 本次請求有事件被維護模式擋下時為 `true`。 |
 | `LineWebhookEvent.Joined` / `Left` / `Beacon` / `Unsend` / `Link` / `Membership` | 成員加入與離開、beacon、收回訊息、帳號連結與會員事件的強型別內容(字串由 `LineWebhookBeaconTypes`、`LineWebhookLinkResults`、`LineWebhookMembershipTypes` 命名)。 |
 | `LineWebhookMessage.Emojis` / `Mention` / `ImageSet` / `QuotedMessageId` / `MarkAsReadToken` / `StickerResourceType` / `Keywords` | 強型別的訊息欄位;沒建模的東西仍在 `Raw`。 |
 
 ### 錯誤代碼
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload` · `line.webhook.no_reply_token` · `line.webhook.reply_token_used` · `line.webhook.not_postback` · `line.postback.expired` · `line.validation.postback_data_too_long`
 
 這些字串是公開契約,發佈後不再更動。
 

@@ -7,6 +7,173 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-27
+
+Several official accounts on one site, an event-handler base class for webhooks with maintenance mode and error
+notification, long postback data staged behind a short token, and a single-image imagemap. Webhook endpoints, auto
+reply and the MCP tools now work per channel. No existing error code, category or method signature changed; every
+new member is additive, and a host that registers one unnamed channel behaves exactly as before.
+
+同一個站台掛多個官方帳號、webhook 的事件處理常式基底類別(附維護模式與錯誤通知)、超長的 postback 資料暫存在短代碼
+後面,以及單圖 imagemap。webhook 端點、自動回覆與 MCP 工具現在都能依 channel 運作。既有的錯誤代碼、分類與方法簽章
+都沒有變;所有新成員都是新增的,只註冊一個未具名 channel 的宿主行為與先前完全相同。
+
+### Added
+
+- **`Ozakboy.Line` — multiple channels.** `AddLineMessaging(name, …)` and `AddLineLiff(name, …)` (each with an
+  options-delegate and an `IConfiguration` form) register a named channel; `ILineMessagingClientFactory` and
+  `ILineLiffClientFactory` give `Get(name)`, `Contains(name)` and `ChannelNames`. The empty string is the default
+  channel. A **named** registration is keyed only; the **unnamed** one is the keyed `""` entry and the plain
+  `ILineMessagingClient` / `ILineLiffClient`, the same instance. Registering a name again **replaces** the earlier
+  registration as a whole — configure delegate, keyed service and listing — so a stale secret cannot survive.
+  `ILineMessagingClient.ChannelName` (a default interface member, so existing implementations keep compiling) says
+  which channel a client is bound to, and `LineHttpClientNames.ForMessaging(name)` / `ForLiff(name)` name each
+  channel's `HttpClient`. `line.not_configured` holds per channel.
+  **`Ozakboy.Line` — 多 channel。** `AddLineMessaging(name, …)` 與 `AddLineLiff(name, …)`(各有委派與
+  `IConfiguration` 兩種形式)註冊具名 channel;`ILineMessagingClientFactory` 與 `ILineLiffClientFactory` 提供
+  `Get(name)`、`Contains(name)` 與 `ChannelNames`。空字串是預設 channel。**具名**註冊只註冊 keyed 服務;**未具名**
+  的是 keyed `""` 加上一般的 `ILineMessagingClient` / `ILineLiffClient`,同一個實例。同名再註冊會把先前的註冊
+  **整個取代**(設定委派、keyed 服務與登記項目),舊密鑰不會殘留。`ILineMessagingClient.ChannelName`(預設介面
+  成員,既有實作照常編譯)說明用戶端綁在哪個 channel,`LineHttpClientNames.ForMessaging(name)` /
+  `ForLiff(name)` 是各 channel 的 `HttpClient` 名稱。`line.not_configured` 逐 channel 成立。
+
+- **`Ozakboy.Line` — webhook event handlers.** `LineWebhookHandler` is an abstract base with 21 `On*Async` methods
+  that do nothing by default: a message event reaches `OnMessageAsync` first and then `OnTextMessageAsync`,
+  `OnImageMessageAsync` and the like, and a type this version does not know reaches `OnUnknownEventAsync`. Each
+  event gets a `LineWebhookContext` carrying the event, the `ChannelName`, that channel's `Messaging` client, the
+  `AutoReplyOutcome` and an `Items` bag; `ReplyAsync` and `ReplyTextAsync` reply with the event's token **once** —
+  any reply that passes the local checks and goes out counts as using it even if LINE refuses, a second one answers
+  `line.webhook.reply_token_used` locally without sending, and an event without a token answers
+  `line.webhook.no_reply_token`; neither throws. The base class does not swallow exceptions, isolation being the
+  endpoint's job.
+  **`Ozakboy.Line` — webhook 事件處理常式。** `LineWebhookHandler` 是抽象基底,有 21 個預設不做事的 `On*Async`:
+  message 事件先進 `OnMessageAsync`,再進 `OnTextMessageAsync`、`OnImageMessageAsync` 等細分的方法,這個版本不認得
+  的型別走 `OnUnknownEventAsync`。每個事件有一個 `LineWebhookContext`,帶事件、`ChannelName`、該 channel 的
+  `Messaging` 用戶端、`AutoReplyOutcome` 與 `Items` 字典;`ReplyAsync` 與 `ReplyTextAsync` 用事件的權杖回覆,
+  而且**只能一次** —— 任何通過本地檢查而送出的回覆都算用掉,即使 LINE 拒絕;第二次在本地回
+  `line.webhook.reply_token_used` 且不送,沒有權杖的事件回 `line.webhook.no_reply_token`,兩者都不擲例外。
+  基底類別不吞例外,隔離是端點的責任。
+
+- **`Ozakboy.Line.AspNetCore` — handler endpoint, maintenance mode and error notification.**
+  `AddLineWebhookHandler<THandler>()` registers a handler as scoped and `MapLineWebhook<THandler>(pattern, options?)`
+  dispatches to it, with the status-code contract unchanged. `LineWebhookEndpointOptions.Maintenance` answers a
+  non-administrator's event with a maintenance text instead of reaching the handler or auto reply; it judges by
+  `Source.UserId` (a group event too, and one with no `UserId` counts as a non-administrator), and an event with no
+  reply token or `mode` of `standby` is dropped without a reply. `LineWebhookEndpointOptions.ErrorNotification`
+  pushes a description to each administrator when a handler throws: each push fails on its own, the whole is capped
+  at ten seconds and 5000 characters, and the status stays 200. Both are copied when the endpoint is mapped, and
+  mapping throws for an enabled feature with an empty allow-list or blank reply text, or with the handler or client
+  not registered. `LineWebhookItems.MaintenanceSkipped` marks a request that held something back.
+  **`Ozakboy.Line.AspNetCore` — 處理常式端點、維護模式與錯誤通知。** `AddLineWebhookHandler<THandler>()` 以 scoped
+  註冊處理常式,`MapLineWebhook<THandler>(pattern, options?)` 把事件分派給它,狀態碼契約不變。
+  `LineWebhookEndpointOptions.Maintenance` 讓非管理員的事件改收到維護中的文字,不進處理常式也不跑自動回覆;
+  它看 `Source.UserId`(群組事件也一樣,沒有 `UserId` 視為非管理員),沒有回覆權杖或 `mode` 為 `standby` 的事件
+  直接丟掉不回。`LineWebhookEndpointOptions.ErrorNotification` 在處理常式擲出例外時推播說明給每一位管理員:
+  每次推播各自失敗,整體上限十秒、整則 5000 字,狀態仍是 200。兩者都在掛端點當下複製,開啟卻白名單為空、
+  回覆文字空白、或處理常式 / 用戶端沒註冊時,掛端點當下就擲例外。`LineWebhookItems.MaintenanceSkipped` 標記
+  本次請求有事件被擋下。
+
+- **`Ozakboy.Line.AspNetCore` — webhook per channel.** `LineWebhookEndpointOptions.ChannelName` pins an endpoint to
+  one channel and `ChannelRouteParameter` takes the name from a route value (`/line/webhook/{channel}`); they are
+  mutually exclusive, and setting both throws while mapping. The signature is checked against
+  `IOptionsMonitor<LineMessagingOptions>.Get(name).ChannelSecret`, and **a name outside
+  `ILineMessagingClientFactory.ChannelNames` is a 401 before anything is touched** — no body read, no options
+  fetched, never a signature checked against an empty secret. Once it verifies the name is in
+  `HttpContext.Items[LineWebhookItems.ChannelName]`, and the context's `ChannelName` and `Messaging` follow it;
+  auto reply, the maintenance reply and error notification use that channel too. With neither option set nothing
+  changes. The whole-payload overload gained a form taking `LineWebhookEndpointOptions` (after the handler, so no
+  existing call becomes ambiguous), of which only the two channel options apply.
+  **`Ozakboy.Line.AspNetCore` — 依 channel 的 webhook。** `LineWebhookEndpointOptions.ChannelName` 把端點固定在
+  一個 channel,`ChannelRouteParameter` 從路由值取名稱(`/line/webhook/{channel}`);兩者互斥,都設會在掛端點
+  當下擲例外。驗簽用 `IOptionsMonitor<LineMessagingOptions>.Get(name).ChannelSecret`,**名稱不在
+  `ILineMessagingClientFactory.ChannelNames` 內,在碰任何東西之前就回 401** —— 不讀內容、不取選項、絕不拿空密鑰
+  去驗簽。驗過之後名稱放在 `HttpContext.Items[LineWebhookItems.ChannelName]`,脈絡的 `ChannelName` 與
+  `Messaging` 跟著走;自動回覆、維護中的回覆與錯誤通知也用該 channel。兩個選項都不設時完全沒變。整批內容的多載
+  多了一個接 `LineWebhookEndpointOptions` 的形式(放在處理常式之後,既有呼叫不會因此歧義),其中只有兩個 channel
+  選項生效。
+
+- **`Ozakboy.Line` — postback data staging.** `ILinePostbackDataStore` (`StoreAsync`, `GetAsync`,
+  `PurgeExpiredAsync`; in memory or a JSON file, with a lifetime) keeps data too long for a postback action behind a
+  token `ozl:` plus 32 lowercase hex characters. `AddLinePostbackData`, `LinePostbackDataOptions`,
+  `PostbackAction.CreateStoredAsync` (which stages short data too), `LinePostbackDataResolver.ResolveAsync` and
+  `LineWebhookContext.ResolvePostbackDataAsync` close the loop; the last answers `line.webhook.not_postback` for an
+  event that is not a postback and `line.not_configured` for a token with no store. A token the store cannot find
+  and an expired one are the same failure, `line.postback.expired`; data over the store's cap fails as
+  `line.validation.postback_data_too_long`.
+  **`Ozakboy.Line` — postback 資料暫存。** `ILinePostbackDataStore`(`StoreAsync`、`GetAsync`、
+  `PurgeExpiredAsync`;記憶體或 JSON 檔,有有效期限)把 postback 動作裝不下的長資料放在代碼後面,代碼是 `ozl:`
+  加 32 個小寫十六進位字元。`AddLinePostbackData`、`LinePostbackDataOptions`、`PostbackAction.CreateStoredAsync`
+  (短資料也照存)、`LinePostbackDataResolver.ResolveAsync` 與 `LineWebhookContext.ResolvePostbackDataAsync`
+  把流程接起來;最後一個對非 postback 事件回 `line.webhook.not_postback`,對沒有儲存體的代碼回
+  `line.not_configured`。儲存體找不到的代碼與已過期的是同一個失敗 `line.postback.expired`;資料超過儲存體上限
+  是 `line.validation.postback_data_too_long`。
+
+- **`Ozakboy.Line` — single-image imagemap (experimental).** `ImagemapMessage.ForSingleImage(imageUrl, altText,
+  height, action)` takes one image and makes all of it the tap area, so the 240 / 300 / 460 / 700 / 1040 variants are
+  not needed. It appends `?` (or `&`) to the address, adds nothing when it already ends in either, and refuses a
+  `#`. This relies on LINE appending `/{width}` and the server ignoring the resulting query string, which LINE does
+  not guarantee.
+  **`Ozakboy.Line` — 單圖 imagemap(實驗性)。** `ImagemapMessage.ForSingleImage(imageUrl, altText, height,
+  action)` 只用一張圖、整張都是點擊範圍,不必準備 240 / 300 / 460 / 700 / 1040 多種尺寸。它在位址後補 `?`(或
+  `&`),尾端本來就是這兩者就不補,含 `#` 的位址直接拒絕。這依賴 LINE 會接上 `/{width}`、伺服器會忽略多出來的
+  query,而 LINE 沒有保證過這件事。
+
+- **`Ozakboy.Line` — auto reply per channel.** `LineAutoReplyRule.ChannelName` pins a rule to a channel; null or
+  empty means every channel, which is also how a rule stored before 0.4.0 reads back. Only the rules for the current
+  channel are considered, with the selection order unchanged (`LineAutoReplyMatcher.ForChannel` does the filtering).
+  `ILineAutoReplyService.HandleAsync(evt, channelName)` is a new overload — a default interface member, so
+  existing implementations compile, and one that knows only the default channel fails other names with
+  `line.not_configured` — and the existing overload means the default channel. `LineAutoReplyService` takes an
+  `ILineMessagingClientFactory`, replies through the channel's own client, and looks `{{displayName}}` up with it;
+  the old constructor taking an `ILineMessagingClient` stays and serves the default channel only.
+  **`Ozakboy.Line` — 依 channel 的自動回覆。** `LineAutoReplyRule.ChannelName` 把規則綁在一個 channel;null 或空字串
+  代表所有 channel,0.4.0 之前存下的規則讀回來也是如此。比對時只考慮適用於目前 channel 的規則,挑選順序不變
+  (篩選由 `LineAutoReplyMatcher.ForChannel` 做)。`ILineAutoReplyService.HandleAsync(evt, channelName)` 是新的
+  多載 —— 預設介面成員,既有實作照常編譯;只認得預設 channel 的實作對其他名稱回 `line.not_configured` —— 既有
+  的多載代表預設 channel。`LineAutoReplyService` 改注入 `ILineMessagingClientFactory`,用該 channel 自己的用戶端
+  回覆、查 `{{displayName}}`;舊的注入 `ILineMessagingClient` 的建構子保留,只服務預設 channel。
+
+- **`Ozakboy.Line.Mcp` — a channel per endpoint.** `LineMcpOptions.ChannelName` (empty, the default channel, unless
+  set) picks the channel whose Messaging and LIFF clients every tool and `ILineMcpOutboxService` use, through the new
+  `LineMcpClients`; the default channel prefers a directly registered client, so a host with no factory carries on
+  working. A channel that is not registered makes every tool answer `line.not_configured` instead of throwing, sends
+  nothing and never falls back to another account; the sending tools and `line_replace_rich_menu` refuse at proposal
+  time. `line_get_bot_info` reports `channelName`, and `line_upsert_auto_reply` and `line_test_auto_reply` take an
+  optional `channelName`. No tool was renamed or removed.
+  **`Ozakboy.Line.Mcp` — 每個端點一個 channel。** `LineMcpOptions.ChannelName`(沒設就是空字串,即預設 channel)
+  經新的 `LineMcpClients` 決定所有工具與 `ILineMcpOutboxService` 用哪個 channel 的 Messaging 與 LIFF 用戶端;
+  預設 channel 優先用直接註冊的用戶端,沒有工廠的舊宿主照常可用。channel 沒有註冊時,所有工具回
+  `line.not_configured` 而不是擲例外,什麼都不送、也不退回別的帳號;送出類工具與 `line_replace_rich_menu` 在提出
+  時就拒絕。`line_get_bot_info` 多回 `channelName`,`line_upsert_auto_reply` 與 `line_test_auto_reply` 多了選填的
+  `channelName`。沒有任何工具改名或移除。
+
+- **New error codes.** `line.webhook.no_reply_token`, `line.webhook.reply_token_used`, `line.webhook.not_postback`,
+  `line.postback.expired` and `line.validation.postback_data_too_long`. Existing codes are untouched.
+  **新錯誤代碼。** `line.webhook.no_reply_token`、`line.webhook.reply_token_used`、`line.webhook.not_postback`、
+  `line.postback.expired` 與 `line.validation.postback_data_too_long`。既有代碼不動。
+
+### Changed
+
+- The test projects now build with no warnings at all. Nothing in the packages changed for it.
+  測試專案現在完全沒有警告。套件本身沒有為此改動。
+
+### Notes
+
+- **Contract behaviour added in this release.** The empty string is the default channel; an unnamed registration is
+  keyed `""` and unkeyed, the same instance, while a named one is keyed only. An unknown webhook channel is always a
+  401, decided before the body or the options are touched, and `LineWebhookItems.ChannelName` is a contract like the
+  other key names. A reply token is single-use: a reply that passes the local checks counts as spent even if LINE
+  rejects it. Maintenance mode judges by `Source.UserId`. A staged postback token is `ozl:` plus 32 lowercase hex
+  characters, and a missing token and an expired one are the same failure; staged data is as unsigned as plain
+  `Data`, so it cannot carry an authorisation decision alone. `ForSingleImage` is experimental. An auto reply rule
+  with an empty `ChannelName` applies to every channel.
+  **本版新增的契約行為。** 空字串是預設 channel;未具名的註冊是 keyed `""` 加 unkeyed、同一個實例,具名的只有
+  keyed。webhook 的未知 channel 一律 401,而且在碰內容與選項之前就決定;`LineWebhookItems.ChannelName` 與其他
+  鍵名一樣是契約。回覆權杖只能用一次:通過本地檢查而送出的回覆就算用掉,即使 LINE 拒絕。維護模式看
+  `Source.UserId`。暫存的 postback 代碼是 `ozl:` 加 32 個小寫十六進位字元,找不到與過期是同一個失敗;暫存的
+  資料和一般的 `Data` 一樣沒有簽章,不能單靠它做權限判斷。`ForSingleImage` 是實驗性的。自動回覆規則的
+  `ChannelName` 為空代表適用所有 channel。
+
 ## [0.3.0] - 2026-10-27
 
 The rest of the Messaging API's account, statistics and rich menu surface, a LIFF server client, typed webhook events,
@@ -457,7 +624,8 @@ and webhook endpoint on top.
   自己實作等於維護一份會隨協定改版而落後的實作 —— 落後的症狀是連接器連得上但工具清單是空的。
   核心與整合兩個套件不受影響。
 
-[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ozakboy/Ozakboy.Line/releases/tag/v0.1.0
