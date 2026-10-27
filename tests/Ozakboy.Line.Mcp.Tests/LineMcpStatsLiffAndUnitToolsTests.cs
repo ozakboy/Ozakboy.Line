@@ -1,3 +1,4 @@
+#pragma warning disable CA1861 // 測試裡的常數陣列只用一次,抽成欄位反而難讀。Constant arrays in tests are used once; hoisting them into fields only hurts readability.
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Ozakboy.Line.Liff;

@@ -11,7 +11,7 @@
 
     <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
-    <PackageReleaseNotes>0.2.0: version bump alongside the core package, which gained TemplateMessage, ImagemapMessage, the sender override, video trackingId and the group, room, follower, loading animation, mark-as-read, validation, narrowcast, audience and insight endpoints. Webhook events now expose VideoPlayComplete.TrackingId, so a handler mapped with MapLineWebhook() can close the loop on a video sent with a tracking id. No change to the authentication scheme, the webhook endpoint's status codes or the claim types. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.3.0: version bump alongside the core package, which gained the webhook endpoint, LIFF, statistics, rich menu batch, bulk send and further local validation. Webhook events passed to a handler mapped with MapLineWebhook() now expose typed join, leave, beacon, unsend, account link and membership data, and messages expose emoji, mention, image set, quoted message id, the mark-as-read token and sticker resource type. No change to the authentication scheme, the webhook endpoint's status codes or the claim types. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>

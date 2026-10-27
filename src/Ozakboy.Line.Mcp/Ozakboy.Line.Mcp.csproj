@@ -11,7 +11,7 @@
 
     <PackageProjectUrl>https://github.com/ozakboy/Ozakboy.Line</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ozakboy/Ozakboy.Line</RepositoryUrl>
-    <PackageReleaseNotes>0.2.0: version bump alongside the core package. The line_send_push, line_send_multicast and line_send_broadcast tools accept template and imagemap message JSON exactly as they accept every other message type: the array is queued and sent verbatim, and the outbox summary names the type. No tool was added or renamed, the review queue and daily cap are unchanged, and the key gate still answers 404 on any failure. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>0.3.0: seven new tools. line_get_webhook_info, line_test_webhook, line_get_delivery_stats and line_get_message_event_insight are read-only and do not count against the daily cap; line_list_liff_apps, line_create_liff_app and line_delete_liff_app manage LIFF apps and answer line.not_configured when the host has not called AddLineLiff. Creating and deleting a LIFF app change the account's configuration rather than send a message, so they skip the review queue and write a log line instead. line_send_push, line_send_multicast and line_send_broadcast take an optional customAggregationUnit, stored with the outbox item and applied at approval time; items queued by 0.2.0 still approve unchanged. The review queue, the daily cap, the one-way outbox statuses and the 404 key gate are unchanged, and no existing tool was renamed. See https://github.com/ozakboy/Ozakboy.Line/blob/main/CHANGELOG.md</PackageReleaseNotes>
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 

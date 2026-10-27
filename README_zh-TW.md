@@ -337,6 +337,159 @@ await line.MarkAsReadAsync(userId);
 
 ---
 
+## textV2:提及與 emoji
+
+`TextMessage` 可以用索引放 LINE emoji;`TextV2Message` 是較新的文字訊息,用 `{key}` 佔位符搭配 substitution 對照表 —— 要提及(mention)某個人,只有這個辦法。
+
+```csharp
+await line.PushAsync(groupId, [
+    new TextV2Message("大家好 {everyone},{reporter} 回報了一筆新紀錄 {sparkle}")
+    {
+        Substitution =
+        {
+            ["everyone"] = LineTextSubstitution.MentionAll(),
+            ["reporter"] = LineTextSubstitution.Mention(userId),
+            ["sparkle"]  = LineTextSubstitution.Emoji("5ac1bfd5040ab15980c9b435", "001"),
+        },
+    },
+]);
+
+await line.PushAsync(userId, [
+    new TextMessage("$ 新紀錄") { Emojis = { new LineTextEmoji(0, "5ac1bfd5040ab15980c9b435", "001") } },
+]);
+```
+
+佔位符的位置由 LINE 自己找,前面有代理對或中日韓字元也不會像字元索引那樣偏掉。文字裡的每個 `{key}` 都必須在 `Substitution` 裡,每個鍵也至少要被引用一次;鍵只能是英數字與底線。違反任何一條,在本地就以 `line.validation.invalid_message` 失敗。收到的提及、emoji、引用訊息與多圖,在 `LineWebhookMessage` 上都是強型別(`Mention`、`Emojis`、`QuotedMessageId`、`ImageSet`)。
+
+---
+
+## 超量發送
+
+推播一次最多 5 則訊息,群發一次最多 500 位收件人。`PushManyAsync` 與 `MulticastManyAsync` 收任意數量,替你切成合規的請求。
+
+```csharp
+var sent = await line.MulticastManyAsync(allUserIds, messages, new LinePushOptions { RetryKey = jobId });
+
+if (sent.TryGetValue(out var ok))
+{
+    // ok.BatchCount, ok.TotalMessages, ok.SentMessages
+}
+else
+{
+    var error = sent.Error;
+    // error.Data[LineBulkSendErrorDataKeys.SentBatches]       已經送出幾批
+    // error.Data[LineBulkSendErrorDataKeys.FailedBatchIndex]  失敗的是哪一批,從 0 起算
+}
+```
+
+- **各批依序送出,第一批失敗就停。** 錯誤保留失敗那一批自己的代碼與分類 —— 429 仍是 `RateLimited` —— 並附上 `sentBatches` 與 `failedBatchIndex`。群發的索引是 `收件人批次 × 訊息批數 + 訊息批次`。
+- **整個輸入先驗證,再送第一批。** 第四批裡有一則壞訊息,是在第一批送出之前就發現,而不是之後。
+- **零則訊息是 `too_many_messages`、零位收件人是 `line.validation.no_recipients`**,不會安靜地回成功。
+- **`RetryKey` 逐批推導。** 每一批的鍵是 `SHA256(你的鍵 16 位元組 + 批次索引 4 位元組 big-endian)` 的前 16 位元組,再設上 UUID v5 與 RFC 4122 的位元(`LineBulkSendRetryKey.Derive`)。所以整個呼叫用同一個鍵重試時,不會重複 LINE 已經收下的批次;單批也一樣會推導。沒給 `RetryKey` 就完全不重試。
+- **刻意沒有 `ReplyManyAsync`。** 回覆權杖只能用一次而且很快過期,回覆沒辦法分散到好幾個請求:`ReplyAsync` 一次最多 5 則,超過的部分該走推播。
+
+---
+
+## 統計與洞察
+
+```csharp
+var count = await line.GetMessageDeliveryCountAsync(LineMessageDeliveryType.Push, new DateOnly(2026, 10, 26));
+// count.Status:Ready | Unready | OutOfService | Unknown;不是 Ready 時 count.Success 為 null
+
+await line.PushAsync(userId, messages, new LinePushOptions { CustomAggregationUnits = ["autumn_sale"] });
+
+var byUnit = await line.GetMessageEventInsightByUnitAsync("autumn_sale", new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30));
+var bySend = await line.GetMessageEventInsightAsync(requestId);     // 單次發送的 X-Line-Request-Id
+var used   = await line.GetAggregationUnitUsageAsync();             // 本月用了幾個單位
+var names  = await line.GetAggregationUnitNamesAsync(limit: 100);
+```
+
+LINE 以 **JST(UTC+9)**計日,所以台灣時間凌晨 0 到 1 點算的是前一天。不是 `Ready` 的數字是 `null`,那不是 0。統計單位在送出前檢查:每次請求最多 1 個、最多 30 個英數字元或底線(`line.validation.invalid_aggregation_unit`);`CustomAggregationUnits` 在推播、群發、廣播與分眾推播都能用。`GetMessageEventInsightByUnitAsync` 要求 `from` 不晚於 `to`、相隔最多 30 天(`line.validation.invalid_date_range`)。
+
+圖文選單另有批次端點 —— 一個請求替最多 1000 位使用者換連結或解除連結,回傳請求識別碼:
+
+```csharp
+var requestId = await line.ReplaceOrUnlinkRichMenusInBatchAsync([
+    LineRichMenuBatchOperation.Link("richmenu-old", "richmenu-new"),
+    LineRichMenuBatchOperation.Unlink("richmenu-retired"),
+]);
+var progress = await line.GetRichMenuBatchProgressAsync(requestId.GetValueOrThrow());
+```
+
+`ValidateRichMenuBatchAsync` 做同樣的檢查但不套用。作業數須為 1 到 1000(`line.validation.invalid_rich_menu_batch`)。
+
+---
+
+## Webhook 位址、帳號連結與訊息內容
+
+```csharp
+var current = await line.GetWebhookEndpointAsync();                 // 位址與是否啟用
+await line.SetWebhookEndpointAsync("https://example.com/line/webhook");
+var test = await line.TestWebhookEndpointAsync();                   // 或 TestWebhookEndpointAsync("https://…")
+// test.GetValueOrThrow().Success / StatusCode / Reason —— 見下
+```
+
+位址必須是 https 且不超過 500 字元,否則在本地就以 `line.validation.invalid_webhook_endpoint` 失敗。**測試時對方伺服器沒回 2xx,呼叫本身仍算成功**:LINE 回報的是對方說了什麼,所以要看 `Success`、`StatusCode` 與 `Reason`,而不是 `Result`。
+
+`IssueLinkTokenAsync(userId)` 回帳號連結流程導向時要帶的 link token。`GetMessageContentPreviewAsync(messageId)` 下載圖片或影片的縮圖,`GetMessageContentTranscodingStatusAsync(messageId)` 說明影片是否已可下載;套件不認得的狀態字串會以 `line.api.invalid_response` 失敗,而不是用猜的。
+
+---
+
+## LIFF
+
+`ILineLiffClient` 讓你的伺服器管理一個 LINE Login 頻道下的 LIFF 應用程式。
+
+```csharp
+builder.Services.AddLineLiff(o =>
+    o.ChannelAccessToken = builder.Configuration["Line:Login:ChannelAccessToken"]!);   // 是 LOGIN 頻道的權杖
+
+var added = await liff.AddAsync(new LineLiffApp
+{
+    View = new LineLiffView { Type = LineLiffViewType.Tall, Url = "https://example.com/booking" },
+    Description = "預約頁",
+    BotPrompt = "normal",
+});
+var liffId = added.GetValueOrThrow();   // 開啟網址:https://liff.line.me/{liffId}
+
+var all = await liff.GetAllAsync();     // 404(沒有任何應用程式)是成功的空清單
+await liff.DeleteAsync(liffId);
+```
+
+⚠ **LIFF 用的是 LINE Login 頻道的權杖,不是 Messaging API 的。** 所以 `AddLineLiff` 有自己的 `LineLiffOptions`,也註冊自己的具名 `HttpClient`(`LineHttpClientNames.Liff`);把 Messaging 頻道的權杖交給它,是本套件偵測不出來的搞混,而 LINE 的拒絕也不會點出這件事。憑證空白時以 `line.not_configured` 失敗且不送出。`UpdateAsync(liffId, app)` 只送你有設的欄位、絕不送 `liffId`,不合規格的應用程式在本地以 `line.validation.invalid_liff_app` 失敗。另有 `AddLineLiff(IConfiguration)` 多載,從設定檔綁定選項。
+
+---
+
+## 送出之前檢查了什麼
+
+下表每一條都在你的機器上以具名代碼失敗,而且**一個請求都不送** —— LINE 自己對其中大多數的回應,是一個只說「請求內容有 1 個錯誤」的 400。
+
+| 項目 | 上限 | 代碼 |
+| --- | --- | --- |
+| 每次請求的訊息數 | 1 到 5 | `too_many_messages` |
+| 群發收件人 | 1 到 500 | `too_many_recipients` |
+| 快速回覆按鈕 | 1 到 13 | `too_many_quick_reply_items` |
+| `text` / `textV2` | 至多 5000 字元 | `invalid_message` |
+| `altText` | 至多 400 字元 | `invalid_message` |
+| 位置的 `title` / `address` | 各至多 100 字元 | `invalid_message` |
+| 媒體網址 | https,至多 2000 字元 | `invalid_message` |
+| 色碼 | `#RRGGBB` | `invalid_message` |
+| `textV2` 佔位符 | 每個 `{key}` 都在 `Substitution`、每個鍵都被引用 | `invalid_message` |
+| 動作 `label` | 至多 20(圖片地圖 50、圖片輪播 12) | `invalid_action` |
+| `postback` data | 至多 300 字元 | `invalid_action` |
+| `uri` 動作 | 協定須在白名單內 | `invalid_action` |
+| 圖文選單區塊動作 | 逐一檢查,訊息指出是哪個區塊 | `invalid_action` |
+| 範本與圖片地圖的形狀 | 見上文 | `invalid_template` / `invalid_imagemap` |
+| 統計單位 | 每次請求 1 個、30 個英數字元或底線 | `invalid_aggregation_unit` |
+| 統計區間 | `from` ≤ `to`、最多 30 天 | `invalid_date_range` |
+| 圖文選單批次 | 1 到 1000 個作業 | `invalid_rich_menu_batch` |
+| Webhook 位址 | https,至多 500 字元 | `invalid_webhook_endpoint` |
+| LIFF 應用程式 | 規格要求的必填欄位 | `invalid_liff_app` |
+| 超量發送 | 至少一則訊息、至少一位收件人 | `too_many_messages` / `no_recipients` |
+
+`RawMessage` 與 `RawAction` **不驗**:它們是 LINE 新增了本套件還沒跟上的東西時的出路,內容對不對由你負責。MCP 工具讀進來的圖文選單也一樣,它的動作一律是 `RawAction`。
+
+---
+
 ## 讓外部 AI 操作:`Ozakboy.Line.Mcp`
 
 把上面這些包成一組 MCP 工具,讓 Claude、自訂連接器或任何 MCP 用戶端查詢帳號狀態、擬廣播、改規則與範本、替換圖文選單。
@@ -385,14 +538,17 @@ builder.Services.AddMcpServer()
 
 | 類別 | 工具 |
 | --- | --- |
-| 查詢 | `line_get_bot_info` · `line_get_quota` · `line_get_profile` |
+| 查詢 | `line_get_bot_info` · `line_get_quota` · `line_get_profile` · `line_get_webhook_info` · `line_test_webhook` · `line_get_delivery_stats` · `line_get_message_event_insight` |
 | 送出(走待審) | `line_send_push` · `line_send_multicast` · `line_send_broadcast` |
 | 待發佇列 | `line_list_outbox` · `line_get_outbox` · `line_cancel_outbox` |
 | 圖文選單 | `line_list_rich_menus` · `line_get_default_rich_menu` · `line_list_rich_menu_aliases` · `line_validate_rich_menu` · `line_replace_rich_menu`(走待審) |
 | 自動回覆 | `line_list_auto_replies` · `line_upsert_auto_reply` · `line_delete_auto_reply` · `line_test_auto_reply` |
 | 訊息範本 | `line_list_templates` · `line_get_template` · `line_upsert_template` · `line_delete_template` · `line_render_template` |
+| LIFF | `line_list_liff_apps` · `line_create_liff_app` · `line_delete_liff_app` |
 
 規則與範本的工具**不走待審**,因為它們不會自己送訊息:改壞一條規則的後果是回錯話,而不是主動打擾全體好友,改回來也只是再 upsert 一次。要完全禁止的話有 `AllowRuleEdits` / `AllowTemplateEdits` / `AllowRichMenuChanges` 三個開關。宿主沒有 `AddLineTemplates` / `AddLineAutoReply` 時,那幾個工具仍然掛得上,只是呼叫時回一句「未啟用」—— 這比工具根本不出現清楚。
+
+四個新的讀取工具(`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`)不改變任何東西,也不計每日額度。`line_get_delivery_stats` 收一個 `yyyy-MM-dd` 日期,一次回覆、推播、群發、廣播四種管道;統計尚未備妥的管道回報 `unready` 且數量為 null,不是 0。LIFF 工具需要 `ILineLiffClient`,宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。**建立與刪除 LIFF 應用程式不走待審佇列**:它們改的是帳號設定而不是送出訊息,所以各自改寫一行日誌 —— 而刪除會讓所有指向它的連結失效。三個送出工具多了選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存,核准時才套用。
 
 ---
 
@@ -443,12 +599,28 @@ builder.Services.AddMcpServer()
 | 聊天與驗證 | `StartLoadingAnimationAsync` · `MarkAsReadAsync` · `ValidateMessagesAsync` · `ValidateMessagesRawJsonAsync` |
 | 分眾推播與受眾 | `NarrowcastAsync` · `GetNarrowcastProgressAsync` · `CreateUploadAudienceGroupAsync` · `AddAudienceGroupMembersAsync` · `GetAudienceGroupAsync` · `GetAudienceGroupListAsync` · `DeleteAudienceGroupAsync` |
 | 成效洞察 | `GetMessageDeliveryInsightAsync` · `GetFollowersInsightAsync` · `GetDemographicInsightAsync` |
+| 超量發送 | `PushManyAsync` · `MulticastManyAsync`(配 `LineBulkSendResult`、`LineBulkSendRetryKey.Derive`、`LineBulkSendErrorDataKeys`) |
+| 統計與統計單位 | `GetMessageDeliveryCountAsync` · `GetMessageEventInsightAsync` · `GetMessageEventInsightByUnitAsync` · `GetAggregationUnitUsageAsync` · `GetAggregationUnitNamesAsync`(單位經 `LinePushOptions.CustomAggregationUnits` 設定,分眾推播也有) |
+| 圖文選單批次 | `ReplaceOrUnlinkRichMenusInBatchAsync` · `ValidateRichMenuBatchAsync` · `GetRichMenuBatchProgressAsync`(配 `LineRichMenuBatchOperation.Link` / `Unlink` / `UnlinkAll`) |
+| Webhook 位址 | `GetWebhookEndpointAsync` · `SetWebhookEndpointAsync` · `TestWebhookEndpointAsync` |
+| 帳號連結與內容 | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
 
-訊息型別:`TextMessage`、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
+訊息型別:`TextMessage`(含 `Emojis`)、`TextV2Message`(配 `LineTextSubstitution`)、`ImageMessage`、`VideoMessage`、`AudioMessage`、`LocationMessage`、`StickerMessage`、`FlexMessage`、`TemplateMessage`(配 `ButtonsTemplate`、`ConfirmTemplate`、`CarouselTemplate`、`ImageCarouselTemplate`)、`ImagemapMessage`(配 `ImagemapUriAction`、`ImagemapMessageAction`、`LineImagemapVideo`),以及給尚未建模的東西用的 `RawMessage`。每則訊息都有 `QuickReply`、`Sender` 與 `Validate()`。動作:`UriAction`、`MessageAction`、`PostbackAction`、`DatetimePickerAction`、`CameraAction`、`CameraRollAction`、`LocationAction`、`ClipboardAction`、`RichMenuSwitchAction`、`RawAction`。快速回覆:`LineQuickReply` / `LineQuickReplyItem`。
 
 `ReplaceRichMenuAsync` 把「建立 → 上傳圖片 → 設預設 → 指向別名 → 刪舊選單」串成一次呼叫。失敗處理刻意不對稱:**圖片上傳失敗會刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟),但**刪舊選單失敗只記錄、整體仍算成功**(新選單已經上線,回報失敗只會讓呼叫端重做而多出一個選單)。
 
 `*RawJsonAsync` 這組多載接受單一訊息物件或訊息陣列,兩種都會被包成 `{"messages": […]}`。LINE 新增了本套件還沒跟上的東西時,那就是出口。
+
+### `ILineLiffClient`
+
+| 成員 | 作用 |
+| --- | --- |
+| `AddAsync(app)` | 建立 LIFF 應用程式,回傳 `liffId`。 |
+| `UpdateAsync(liffId, app)` | 修改有設定的欄位;絕不送 `liffId`。 |
+| `GetAllAsync()` | 列出應用程式;404 是成功的空清單。 |
+| `DeleteAsync(liffId)` | 刪除應用程式。 |
+
+以 `AddLineLiff(options)` 或 `AddLineLiff(configuration)` 註冊,走自己的具名 `HttpClient`,用 Login 頻道的權杖。
 
 ### 訊息範本與自動回覆
 
@@ -471,7 +643,7 @@ builder.Services.AddMcpServer()
 | --- | --- |
 | `AddLineMcp(configure, stores?)` | 設定、待發佇列、待發項目服務、抓圖用的具名 HTTP 用戶端。 |
 | `AddLineMcpServer(configure, stores?)` | 上面全部,加一個只掛 LINE 工具的 stateless MCP server。 |
-| `IMcpServerBuilder.WithLineTools()` | 把六組工具加進宿主既有的 MCP server。 |
+| `IMcpServerBuilder.WithLineTools()` | 把七組工具加進宿主既有的 MCP server。 |
 | `UseLineMcpKeyGate(prefix?)` | 金鑰閘,**必須在 `UseRouting` 之前**。 |
 | `UseLineMcpWellKnownNotFound()` | `/.well-known/` 一律乾淨 404。 |
 | `MapLineMcp(prefix?)` | MCP 端點,prefix 要與金鑰閘用同一個。 |
@@ -490,10 +662,12 @@ builder.Services.AddMcpServer()
 | `MapLineWebhook(pattern, handler)` | 端點本身。逐事件與整批各一個多載。 |
 | `MapLineWebhook(pattern, configure, handler)` | 同上,另可用 `LineWebhookEndpointOptions.AutoReply` 先跑一次自動回覆。 |
 | `LineWebhookItems.AutoReplyOutcome` | 自動回覆結果在 `HttpContext.Items` 裡的鍵名。 |
+| `LineWebhookEvent.Joined` / `Left` / `Beacon` / `Unsend` / `Link` / `Membership` | 成員加入與離開、beacon、收回訊息、帳號連結與會員事件的強型別內容(字串由 `LineWebhookBeaconTypes`、`LineWebhookLinkResults`、`LineWebhookMembershipTypes` 命名)。 |
+| `LineWebhookMessage.Emojis` / `Mention` / `ImageSet` / `QuotedMessageId` / `MarkAsReadToken` / `StickerResourceType` / `Keywords` | 強型別的訊息欄位;沒建模的東西仍在 `Raw`。 |
 
 ### 錯誤代碼
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
 
 這些字串是公開契約,發佈後不再更動。
 

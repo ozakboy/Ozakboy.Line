@@ -7,6 +7,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-27
+
+The rest of the Messaging API's account, statistics and rich menu surface, a LIFF server client, typed webhook events,
+oversized sends split into batches, a local check for the caps LINE enforces on messages and actions, and seven new MCP
+tools. No existing error code, category or method signature changed.
+
+Messaging API 剩下的帳號設定、統計與圖文選單端點、LIFF server 用戶端、強型別的 webhook 事件、超量發送自動分批、
+LINE 對訊息與動作的上限在本地檢查,以及七個新的 MCP 工具。既有的錯誤代碼、分類與方法簽章都沒有變。
+
+### Added
+
+- **`Ozakboy.Line` — webhook endpoint, account linking and message content.** `GetWebhookEndpointAsync`,
+  `SetWebhookEndpointAsync` and `TestWebhookEndpointAsync` read, change and test the webhook address; the address must
+  be https and at most 500 characters, checked locally. A test whose far end answers non-2xx is still a successful
+  call — read `LineWebhookTestResult.Success`. `IssueLinkTokenAsync` issues the link token for account linking,
+  `GetMessageContentPreviewAsync` downloads the preview of an image or video, and
+  `GetMessageContentTranscodingStatusAsync` reports whether a video is ready; a status string it does not know fails
+  as `line.api.invalid_response`.
+  **`Ozakboy.Line` — webhook 位址、帳號連結與訊息內容。** `GetWebhookEndpointAsync`、`SetWebhookEndpointAsync` 與
+  `TestWebhookEndpointAsync` 讀取、修改與測試 webhook 位址;位址必須是 https 且不超過 500 字元,本地檢查。
+  測試時對方伺服器沒回 2xx,呼叫本身仍算成功 —— 要看 `LineWebhookTestResult.Success`。
+  `IssueLinkTokenAsync` 核發帳號連結用的 link token,`GetMessageContentPreviewAsync` 下載圖片或影片的縮圖,
+  `GetMessageContentTranscodingStatusAsync` 回報影片轉檔是否完成;不認得的狀態字串以
+  `line.api.invalid_response` 失敗。
+
+- **`Ozakboy.Line` — LIFF.** `ILineLiffClient` (`AddAsync`, `UpdateAsync`, `GetAllAsync`, `DeleteAsync`) manages the
+  LIFF apps of a LINE Login channel, registered with either `AddLineLiff` overload and configured through
+  `LineLiffOptions`. It runs on its own named `HttpClient` (`LineHttpClientNames.Liff`) with the **Login channel's**
+  token, not the Messaging API's. `UpdateAsync` sends only the fields that are set and never the `liffId`;
+  `GetAllAsync` turns a 404 into a successful empty list. Blank credentials fail as `line.not_configured` without
+  sending anything, and a malformed app as `line.validation.invalid_liff_app`.
+  **`Ozakboy.Line` — LIFF。** `ILineLiffClient`(`AddAsync`、`UpdateAsync`、`GetAllAsync`、`DeleteAsync`)管理
+  一個 LINE Login 頻道下的 LIFF 應用程式,以 `AddLineLiff` 的兩個多載註冊、`LineLiffOptions` 設定。它走自己的
+  具名 `HttpClient`(`LineHttpClientNames.Liff`),用的是 **Login 頻道**的權杖,不是 Messaging API 的。
+  `UpdateAsync` 只送有值的欄位、絕不送 `liffId`;`GetAllAsync` 把 404 當成成功的空清單。憑證空白以
+  `line.not_configured` 失敗且不送出,內容不合規格是 `line.validation.invalid_liff_app`。
+
+- **`Ozakboy.Line` — statistics and aggregation units.** `GetMessageDeliveryCountAsync(type, date)` reads one
+  channel's delivered count for one day (LINE counts days in JST; anything but `ready` leaves `Success` null),
+  `GetMessageEventInsightAsync(requestId)` the engagement of one send, and `GetMessageEventInsightByUnitAsync` that
+  of a unit over a range of at most 30 days (`from` not after `to`, else `line.validation.invalid_date_range`).
+  `LinePushOptions.CustomAggregationUnits` and the narrowcast options tag a send with a unit — at most one per
+  request, at most 30 letters, digits or underscores, checked locally as `line.validation.invalid_aggregation_unit`;
+  `GetAggregationUnitUsageAsync` and `GetAggregationUnitNamesAsync` report the units in use.
+  **`Ozakboy.Line` — 統計與統計單位。** `GetMessageDeliveryCountAsync(type, date)` 讀某管道某一天的送達數
+  (LINE 以 JST 計日;狀態不是 `ready` 時 `Success` 為 null),`GetMessageEventInsightAsync(requestId)` 讀單次發送
+  的互動統計,`GetMessageEventInsightByUnitAsync` 讀某個統計單位在最多 30 天區間內的統計(`from` 不得晚於
+  `to`,否則 `line.validation.invalid_date_range`)。`LinePushOptions.CustomAggregationUnits` 與分眾推播選項
+  替一次發送標上統計單位 —— 每次請求最多 1 個、最多 30 個英數字元或底線,本地檢查,違反為
+  `line.validation.invalid_aggregation_unit`;`GetAggregationUnitUsageAsync` 與
+  `GetAggregationUnitNamesAsync` 回報用了哪些單位。
+
+- **`Ozakboy.Line` — rich menu batch operations.** `ReplaceOrUnlinkRichMenusInBatchAsync` takes 1 to 1000
+  `LineRichMenuBatchOperation`s (`Link`, `Unlink`, `UnlinkAll`) and returns the request id from `X-Line-Request-Id`;
+  `ValidateRichMenuBatchAsync` checks them without running, and `GetRichMenuBatchProgressAsync` reads the phase. An
+  empty or oversized list fails locally as `line.validation.invalid_rich_menu_batch`.
+  **`Ozakboy.Line` — 圖文選單批次作業。** `ReplaceOrUnlinkRichMenusInBatchAsync` 收 1 到 1000 個
+  `LineRichMenuBatchOperation`(`Link`、`Unlink`、`UnlinkAll`),回 `X-Line-Request-Id` 標頭裡的請求識別碼;
+  `ValidateRichMenuBatchAsync` 只驗不執行,`GetRichMenuBatchProgressAsync` 讀階段。空清單或超量在本地以
+  `line.validation.invalid_rich_menu_batch` 失敗。
+
+- **`Ozakboy.Line` — bulk send.** `PushManyAsync` and `MulticastManyAsync` split an oversized send into batches of
+  5 messages and 500 recipients and send them **in order**, stopping at the first failure; the error keeps that
+  batch's code and category and adds `sentBatches` and `failedBatchIndex` (`LineBulkSendErrorDataKeys`). The whole
+  input is validated before the first batch goes out. With a `RetryKey`, each batch gets its own key from
+  `LineBulkSendRetryKey.Derive`, so retrying the whole call cannot duplicate a batch that already went out; without
+  one nothing is retried. Zero messages fail as `too_many_messages` and zero recipients as `line.validation.no_recipients`.
+  There is deliberately no `ReplyManyAsync`: a reply token is single-use and expires.
+  **`Ozakboy.Line` — 超量發送。** `PushManyAsync` 與 `MulticastManyAsync` 把超量的發送切成每批 5 則訊息、
+  500 位收件人,**依序**送出,第一批失敗即停;錯誤保留該批的代碼與分類,並附上 `sentBatches` 與
+  `failedBatchIndex`(`LineBulkSendErrorDataKeys`)。整個輸入先驗證,通過才送第一批。給了 `RetryKey` 時,
+  每一批由 `LineBulkSendRetryKey.Derive` 推導出自己的鍵,整個呼叫重試時不會重複已經送出的批次;沒給就不重試。
+  零則訊息是 `too_many_messages`,零位收件人是 `line.validation.no_recipients`。刻意沒有 `ReplyManyAsync`:
+  回覆權杖只能用一次而且會過期。
+
+- **`Ozakboy.Line` — typed webhook fields.** `LineWebhookEvent` gained `Joined`, `Left`, `Beacon`, `Unsend`,
+  `Link` and `Membership`; `LineWebhookMessage` gained `Emojis`, `Mention`, `ImageSet`, `QuotedMessageId`,
+  `MarkAsReadToken`, `StickerResourceType` and `Keywords`; and `LineWebhookBeaconTypes`, `LineWebhookLinkResults`,
+  `LineWebhookMembershipTypes` and `LineWebhookEventTypes.Membership` name the wire strings.
+  **`Ozakboy.Line` — webhook 強型別欄位。** `LineWebhookEvent` 多了 `Joined`、`Left`、`Beacon`、`Unsend`、`Link`
+  與 `Membership`;`LineWebhookMessage` 多了 `Emojis`、`Mention`、`ImageSet`、`QuotedMessageId`、
+  `MarkAsReadToken`、`StickerResourceType` 與 `Keywords`;`LineWebhookBeaconTypes`、`LineWebhookLinkResults`、
+  `LineWebhookMembershipTypes` 與 `LineWebhookEventTypes.Membership` 給這些字串取了名字。
+
+- **`Ozakboy.Line` — emoji and textV2.** `TextMessage.Emojis` (`LineTextEmoji`) places LINE emoji by index, and the
+  new `TextV2Message` writes `{key}` placeholders resolved by `LineTextSubstitution.Mention`, `MentionAll` and
+  `Emoji`, so positions no longer shift when a surrogate pair precedes them. Every `{key}` must exist in the
+  substitution and every key must be referenced at least once.
+  **`Ozakboy.Line` — emoji 與 textV2。** `TextMessage.Emojis`(`LineTextEmoji`)以索引放 LINE emoji;新的
+  `TextV2Message` 寫 `{key}` 佔位符,由 `LineTextSubstitution.Mention`、`MentionAll` 與 `Emoji` 解析,位置不會
+  因為前面有代理對而偏掉。每個 `{key}` 必須在 substitution 裡,每個鍵至少要被引用一次。
+
+- **`Ozakboy.Line` — local validation.** Text and textV2 at most 5000 characters, alt text 400, location title and
+  address 100, media URLs https and at most 2000, action labels 20 (imagemap 50, image carousel 12), postback data
+  300, a uri-scheme allow-list, `#RRGGBB` colours. A violation fails as `line.validation.invalid_message` or
+  `line.validation.invalid_action` and sends nothing; `RawMessage` and `RawAction` are not checked. Every rich menu
+  area's action is now checked too, in `CreateRichMenuAsync`, `ValidateRichMenuAsync` and `ReplaceRichMenuAsync`,
+  with the area named in the message (`richMenu.areas[2]`); `LineRichMenu.Validate()` is public.
+  **`Ozakboy.Line` — 本地驗證。** 文字與 textV2 至多 5000 字元、altText 400、位置的標題與地址 100、媒體網址
+  須 https 且至多 2000、動作標籤 20(圖片地圖 50、圖片輪播 12)、postback data 300、uri 協定白名單、
+  `#RRGGBB` 色碼。違反時以 `line.validation.invalid_message` 或 `line.validation.invalid_action` 失敗且不送出;
+  `RawMessage` 與 `RawAction` 不驗。圖文選單每個區塊的動作現在也會檢查
+  (`CreateRichMenuAsync`、`ValidateRichMenuAsync`、`ReplaceRichMenuAsync`),訊息裡指出是哪個區塊
+  (`richMenu.areas[2]`);`LineRichMenu.Validate()` 是公開的。
+
+- **`Ozakboy.Line.Mcp` — seven tools.** `line_get_webhook_info`, `line_test_webhook`, `line_get_delivery_stats`
+  (all four channels for one `yyyy-MM-dd` date; an `unready` channel is reported as it is) and
+  `line_get_message_event_insight` are read-only and do not count against the daily cap. `line_list_liff_apps`,
+  `line_create_liff_app` and `line_delete_liff_app` manage LIFF apps; when the host has not called `AddLineLiff` they
+  answer `line.not_configured`. Creating and deleting change the account's configuration rather than send a message,
+  so they skip the review queue and write a log line. `line_send_push`, `line_send_multicast` and
+  `line_send_broadcast` take an optional `customAggregationUnit`, checked when proposed and stored with the outbox
+  item; items queued by 0.2.0 approve as before.
+  **`Ozakboy.Line.Mcp` — 七個工具。** `line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`
+  (某個 `yyyy-MM-dd` 日期四種管道一次回,`unready` 的管道如實回報)與 `line_get_message_event_insight`
+  都是唯讀,不計每日額度。`line_list_liff_apps`、`line_create_liff_app` 與 `line_delete_liff_app` 管理 LIFF
+  應用程式;宿主沒呼叫 `AddLineLiff` 時回 `line.not_configured`。建立與刪除改的是帳號設定而不是送出訊息,
+  所以不進待審佇列,改寫一行日誌。`line_send_push`、`line_send_multicast` 與 `line_send_broadcast` 多了
+  選填的 `customAggregationUnit`,提出時檢查、隨待發項目一起存;0.2.0 排進佇列的項目照常核准。
+
+- **New error codes.** `line.validation.invalid_message`, `line.validation.invalid_action`,
+  `line.validation.invalid_webhook_endpoint`, `line.validation.invalid_liff_app`,
+  `line.validation.invalid_date_range`, `line.validation.invalid_aggregation_unit`,
+  `line.validation.invalid_rich_menu_batch` and `line.validation.no_recipients`; `LineMessagingLimits` gained the
+  matching constants. Existing codes are untouched.
+  **新錯誤代碼。** `line.validation.invalid_message`、`line.validation.invalid_action`、
+  `line.validation.invalid_webhook_endpoint`、`line.validation.invalid_liff_app`、
+  `line.validation.invalid_date_range`、`line.validation.invalid_aggregation_unit`、
+  `line.validation.invalid_rich_menu_batch` 與 `line.validation.no_recipients`;`LineMessagingLimits` 加上對應
+  的常數。既有代碼不動。
+
+### Fixed
+
+- **Serialising a concrete message or action type directly.** `JsonSerializer.Serialize(new TextMessage("x"))`
+  infers `TextMessage` as the type argument, and the `[JsonConverter]` on `LineMessage` is not inherited, so it fell
+  back to reflection and wrote PascalCase JSON with no error. Every concrete `LineMessage` and `LineAction` now
+  carries a converter factory, and the output matches serialising it as the base type.
+  **直接以具體型別序列化訊息或動作。** `JsonSerializer.Serialize(new TextMessage("x"))` 推導出的型別參數是
+  `TextMessage`,而 `LineMessage` 上的 `[JsonConverter]` 不會被繼承,所以它退回反射、寫出 PascalCase 的 JSON
+  而且沒有任何錯誤。現在每個具體的 `LineMessage` 與 `LineAction` 都掛了轉換器工廠,輸出與以基底型別序列化一致。
+
+### Notes
+
+- **Contract behaviour added in this release.** `ILineLiffClient.GetAllAsync` treats 404 as a successful empty
+  list (the third 404-as-none, after the two rich menu id lookups); every other status still fails with its
+  category kept. `TestWebhookEndpointAsync` succeeds even when the far end does not answer 2xx. A bulk send sends
+  batches in order, stops at the first failure, and derives each batch's retry key as the first 16 bytes of
+  SHA-256 over the key's 16 bytes and the 4-byte big-endian batch index, with the UUID version 5 and RFC 4122
+  variant bits set — a single batch derives one too, and no key means no retry. The `line_*` names of the seven new
+  MCP tools are a contract like the rest.
+  **本版新增的契約行為。** `ILineLiffClient.GetAllAsync` 把 404 當成成功的空清單(繼兩個圖文選單識別碼
+  查詢之後的第三個「404 當成沒有」);其他狀態碼仍是失敗,分類保留。`TestWebhookEndpointAsync` 在對方伺服器
+  沒回 2xx 時呼叫本身仍成功。分批送出依序送、第一批失敗即停,每批的重試鍵是「鍵的 16 位元組加批次索引 4 位元組
+  (big-endian)」做 SHA-256 取前 16 位元組,再設上 UUID v5 與 RFC 4122 的位元 —— 單批也推導,沒給鍵就不重試。
+  七個新 MCP 工具的 `line_*` 名稱與其他工具一樣是契約。
+
 ## [0.2.0] - 2026-10-27
 
 Two more message types, the rest of the Messaging API's chat, audience and insight surface, and a local check for
@@ -297,6 +453,7 @@ and webhook endpoint on top.
   自己實作等於維護一份會隨協定改版而落後的實作 —— 落後的症狀是連接器連得上但工具清單是空的。
   核心與整合兩個套件不受影響。
 
-[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ozakboy/Ozakboy.Line/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ozakboy/Ozakboy.Line/releases/tag/v0.1.0

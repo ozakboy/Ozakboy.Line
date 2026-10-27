@@ -38,22 +38,31 @@ Ozakboy.Line/
   .github/workflows/build.yml
   src/Ozakboy.Line/                     核心(PackageId=Ozakboy.Line)
     Line{Endpoints,ErrorCodes,ErrorDataKeys,MessagingLimits,Json,Http,ApiErrorMapper}.cs
+                  (Endpoints / ErrorCodes / MessagingLimits 另拆 partial:.Channel / .Liff / .Stats / .RichMenuBatch /
+                  .Batch / .Messages,依功能分檔)
     LineUserProfile.cs  LineHttpClientNames.cs  LineServiceCollectionExtensions.cs
     Login/        LineLoginOptions / LineLoginClient / LineIdTokenValidator / LinePkce / 回應模型
-    Messaging/    LineMessagingOptions / LineMessagingClient(+ .Chat / .Narrowcast / .Insight 三個 partial)
+    Messaging/    LineMessagingOptions / LineMessagingClient(+ .Chat / .Narrowcast / .Insight / .Channel / .Stats /
+                  .RichMenuBatch / .Bulk 七個 partial,ILineMessagingClient 同樣分檔)
                   回應模型 / LinePushOptions / LineQuickReply(+Item)/ LineMessageSender / LineUserIdsPage
-                  LineGroupSummary / LineMessageValidationTarget
-      Messages/   LineMessage 與九種具體訊息(含 TemplateMessage、ImagemapMessage)+ RawMessage + 序列化器與轉換器
+                  LineGroupSummary / LineMessageValidationTarget / LineWebhookEndpointInfo / LineWebhookTestResult
+                  LineBulkSend{Result,RetryKey,ErrorDataKeys}
+      Messages/   LineMessage 與十種具體訊息(含 TemplateMessage、ImagemapMessage、TextV2Message)+ RawMessage
+                  + 序列化器與轉換器(LineMessageJsonConverter + 具體型別用的 Factory)+ LineMessageValidation
+                  + LineTextEmoji / LineTextSubstitution
         Template/ LineTemplate / Buttons / Confirm / Carousel(+Column)/ ImageCarousel(+Column)
         Imagemap/ LineImagemapAction / ImagemapUri / ImagemapMessage / LineImagemapArea / LineImagemapVideo
       Actions/    LineAction 與九種具體動作(Uri / Message / Postback / DatetimePicker / Camera / CameraRoll /
                 Location / Clipboard / RichMenuSwitch)+ RawAction + 轉換器
-      RichMenu/   LineRichMenu / Size / Bounds / Area / Info / Alias / ReplaceOptions
+      RichMenu/   LineRichMenu / Size / Bounds / Area / Info / Alias / ReplaceOptions / BatchOperation / BatchProgress
       Narrowcast/ LineNarrowcastOptions / LineNarrowcastRecipient(Audience / Redelivery / And / Or / Not)/ Progress
       Audience/   LineAudienceGroup / Created / Detail / Job / Page
       Insight/    LineMessageDeliveryInsight / LineFollowersInsight / LineDemographicInsight(+ 五種百分比項目)
+                  / LineMessageDeliveryCount / LineMessageEventInsight(+ Overview / Message / Click)/ 統計單位回應
+    Liff/         ILineLiffClient / LineLiffClient / LineLiffOptions / LineLiffApp(+ View / ViewType / Features)
+                  / LineLiffServiceCollectionExtensions(AddLineLiff 兩個多載)
     Webhook/      LineWebhookSignature / LineWebhookParser / LineWebhookContentProvider / LineWebhookVideoPlayComplete
-                  事件模型 / 型別常數
+                  事件模型 / 型別常數 / Beacon / Link / Membership / Unsend / Mention / Emoji / ImageSet 等強型別
     Templates/    LineMessageTemplate / LineTemplateVariables / LineTemplateRenderer / store 與 DI
     AutoReply/    LineAutoReplyRule / Matcher / Service / Outcome / store 與 DI
     Storage/      JsonFileStore(internal,原子寫入 + 讀寫鎖)/ LineStoreIds
@@ -66,10 +75,11 @@ Ozakboy.Line/
     LineMcp{ServiceCollection,ServerBuilder,ApplicationBuilder,EndpointRouteBuilder}Extensions.cs
     LineMcp{KeyGate,WellKnownNotFound}Middleware.cs
     Outbox/       LineMcpOutbox{Item,Kind,Status} / ILineMcpOutboxStore / InMemory / JsonFile / ILineMcpOutboxService / Service
-    Tools/        Line{Info,Send,Outbox,RichMenu,AutoReply,Template}Tools
+    LineMcpAggregationUnit.cs(送出工具的統計單位檢查與選項轉換)
+    Tools/        Line{Info,Send,Outbox,RichMenu,Liff,AutoReply,Template}Tools
   tests/Ozakboy.Line.Tests/             核心測試(離線;Samples/*.json 是依官方文件整理的回應樣本,source 欄位註明端點)
   tests/Ozakboy.Line.AspNetCore.Tests/  整合測試(TestHost,離線)
-  tests/Ozakboy.Line.Mcp.Tests/         MCP 測試(工具直接 new + TestHost 驗金鑰閘,離線)
+  tests/Ozakboy.Line.Mcp.Tests/         MCP 測試(工具直接 new + TestHost 驗金鑰閘,離線;FakeLineLiffClient 在 TestSupport/)
 ```
 
 ## 驗證指令(改完必跑)
@@ -98,7 +108,7 @@ Ozakboy.Line/
 - **`RetryKey` 的語意是契約。** 有值 → 加 `X-Line-Retry-Key` 標頭**且**標 `AsIdempotent()`;沒有 → 兩者都不做,因此絕不重試。只做其中一件的結果分別是「重試但重複發送」與「帶了鍵卻永遠不重試」。
 - **multicast 上限 500、單次訊息 1~5 則**,在本地檢查、失敗時**不送出任何請求**(`LineMessagingLimits`)。
 - **`not_configured` 行為是契約。** 憑證不齊時所有方法直接回 `line.not_configured` 失敗且**一個請求都不送**;唯一例外是 `BuildAuthorizationUrl`(不回 `Result`,改擲 `InvalidOperationException`)。
-- **404 當成「沒有」的兩個方法**:`GetDefaultRichMenuIdAsync` 與 `GetRichMenuIdOfUserAsync` 在 404 時回**成功且值為 null**;其他狀態碼仍是失敗。
+- **404 當成「沒有」的兩個方法**:`GetDefaultRichMenuIdAsync` 與 `GetRichMenuIdOfUserAsync` 在 404 時回**成功且值為 null**;其他狀態碼仍是失敗。(0.3.0 的 `ILineLiffClient.GetAllAsync` 是第三個,見下方 LIFF 條目。)
 - **`LineClaimTypes` 的宣告型別字串是契約**;`IsFriend` 在查不到時**不發這個宣告**(不是發 `"false"`)。
 - **id_token 驗不過 = 整個登入失敗**,核心的 `CompleteLoginAsync` 與整合的 `CreateTicketAsync` 兩邊都是。
 - **webhook 端點的狀態碼是契約**:驗簽失敗 401、解析失敗 400、其餘一律 200(含處理常式擲例外與零事件的驗證請求)。
@@ -109,6 +119,11 @@ Ozakboy.Line/
 - **端點參數的本地上限是契約**(0.2.0):載入動畫秒數 5~60 且為 5 的倍數(`line.validation.invalid_loading_seconds`)、好友清單 `limit` 1~1000 與受眾清單 `page ≥ 1` / `size` 1~40(`line.validation.invalid_page_size`)、受眾成員單次 ≤ 10,000(建立可為 0、加成員至少 1;`line.validation.too_many_audience_members`)。違反時不送出。
 - **`NarrowcastAsync` 回的是 `X-Line-Request-Id` 標頭的值**,沒有那個標頭是 `line.api.invalid_response` 失敗;`RetryKey` 語意與推播完全相同。**`ValidateMessagesAsync` 先跑本地檢查再打 LINE**,本地失敗時不送。
 - **`LineMessageValidationTarget` 只決定路徑最後一段**(`push` / `multicast` / `broadcast` / `reply` / `narrowcast`),不改請求內容。
+- **LIFF 是第三個「404 當成沒有」,而且走獨立的權杖與 HttpClient**(0.3.0):`ILineLiffClient.GetAllAsync` 404 → **成功的空清單**,其他狀態碼仍是失敗且分類保留;LIFF 走獨立具名 HttpClient(`LineHttpClientNames.Liff`)與 **Login 頻道**的權杖(不是 Messaging 的);憑證空白 → `line.not_configured` 且一個請求都不送。
+- **Webhook 位址與 LIFF 更新的行為是契約**(0.3.0):`SetWebhookEndpointAsync` / `TestWebhookEndpointAsync` 的 endpoint 本地檢查(https、≤ 500,`line.validation.invalid_webhook_endpoint`);`TestWebhookEndpointAsync` 對方伺服器沒回 2xx 時**呼叫本身仍成功**,要看 `Success` 欄位;`ILineLiffClient.UpdateAsync` **只送有值的欄位且絕不送 `liffId`**;`GetMessageContentTranscodingStatusAsync` 遇到未知狀態字串 → `line.api.invalid_response`(不猜)。
+- **分批送出(`PushManyAsync` / `MulticastManyAsync`)的契約**(0.3.0):每批 5 則 / 500 人、**依序**送、**第一批失敗即停**,錯誤**保留該批的代碼與分類**並附 `sentBatches` 與 `failedBatchIndex`(0 起算;multicast 的索引 = recipientBatch × messageBatchCount + messageBatch);**整個輸入先驗證再送第一批**;零則訊息 → `too_many_messages`、零收件人 → `line.validation.no_recipients`;每批 RetryKey = `SHA256(key 的 16 bytes + 批次索引 4 bytes big-endian)` 的前 16 bytes 並設 UUID v5 / RFC 4122 位元(`LineBulkSendRetryKey.Derive`),**單批也推導**,沒給 key 就不帶、不重試;**刻意沒有 `ReplyManyAsync`**(回覆權杖單次有效且很快過期,不能分散到多個請求)。
+- **統計單位與批次上限是契約**(0.3.0):`CustomAggregationUnits` 每次請求最多 1 個、≤ 30 字英數底線,本地擋(`line.validation.invalid_aggregation_unit`;push / multicast / broadcast / narrowcast 皆然);`GetMessageEventInsightByUnitAsync` 區間 `from ≤ to` 且 ≤ 30 天(`line.validation.invalid_date_range`);圖文選單批次作業 1–1000(`line.validation.invalid_rich_menu_batch`),request id 來自 `X-Line-Request-Id`。
+- **訊息與動作的本地驗證是契約**(0.3.0):text / textV2 ≤ 5000、altText ≤ 400、location title / address ≤ 100、媒體 URL https 且 ≤ 2000、動作 label ≤ 20(imagemap 50、image carousel 12)、postback data ≤ 300、uri scheme 白名單、色碼 `#RRGGBB`、textV2 的 `{key}` 必須在 substitution 裡且每個 key 至少被引用一次;違反 → `line.validation.invalid_message` / `line.validation.invalid_action`,**一個請求都不送**;**圖文選單每個區塊的動作**也在 `CreateRichMenuAsync` / `ValidateRichMenuAsync` / `ReplaceRichMenuAsync`(建立之前)檢查,訊息指出 `richMenu.areas[i]`;**`RawMessage` / `RawAction` 不驗**(逃生口,因此 MCP 讀進來的選單——動作一律是 `RawAction`——不經這道本地檢查,最後防線是 LINE 的 validate 端點)。
 - **`ReplaceRichMenuAsync` 的失敗處理是契約,而且刻意不對稱**:圖片上傳失敗會**刪掉剛建的新選單**(沒有圖片的選單比沒有選單更糟,而且佔額度);刪舊選單失敗**只記錄、整體仍回成功**(新選單已上線,回失敗只會讓呼叫端重做而多出一個選單)。設預設失敗則回失敗但**不**刪新選單。
 - **自動回覆的挑選順序是契約**:先 `Priority` 升冪,同分再依明確程度 `Exact` > `StartsWith` > `Contains` > `Regex`。`Follow` 與 `Fallback` **不參與一般比對**,由 `FindFirst` 另外取;`Fallback` 只在其他規則都沒命中時才用,不參與優先序比較。
 - **正規表示式比對逾時(100 ms)或表示式無效一律視為「不符」**,不擲出例外 —— 一條寫壞的規則不得讓 webhook 回非 2xx,那會讓 LINE 重送整批。
@@ -118,10 +133,14 @@ Ozakboy.Line/
 - **MCP 的待審制度是契約,不可放寬**:預設 `SendMode = Review`;`ILineMcpOutboxService` 的核准 / 退回 / 取消**永遠不得暴露成 MCP 工具**;所有送出類工具兩種模式都要寫一筆待發紀錄(直接模式**先送再記**,免得留下「已送出」的假紀錄);每日建立上限以 **CreatedAt** 計數而非送出數。
 - **MCP 待發項目狀態只往前走**:`PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected` / `Canceled`,已送出的不得回到待審(能回到待審 = 同一則訊息可能被核准兩次)。
 - **MCP 金鑰閘驗證失敗一律回 404**,不得改成 401/403(那等於確認端點存在);未設 `ApiKey` = 功能關閉、整個子樹 404;比對必須用 `CryptographicOperations.FixedTimeEquals`。
-- **MCP 工具名稱(`line_*`)是契約**:外部 AI 的提示詞與流程綁在上面,發佈後不改名。要表達新能力請加新工具。
+- **MCP 工具名稱(`line_*`)是契約**:外部 AI 的提示詞與流程綁在上面,發佈後不改名。要表達新能力請加新工具。0.3.0 新增的七個——`line_get_webhook_info`、`line_test_webhook`、`line_get_delivery_stats`、`line_get_message_event_insight`、`line_list_liff_apps`、`line_create_liff_app`、`line_delete_liff_app`——同樣適用。
+- **MCP 的 LIFF 工具與統計單位**(0.3.0):LIFF 工具在 `ILineLiffClient` 未註冊(宿主沒呼叫 `AddLineLiff`)時**照樣掛上並回 `line.not_configured`**,不是消失;建立 / 刪除 LIFF 是帳號設定變更不是訊息送出,**不進待發佇列**、只寫一行 `ILogger`(這與 `line_replace_rich_menu` 不同,後者走待審);四個查詢類新工具唯讀、不計每日額度,`line_get_delivery_stats` 四種管道都要回、`unready` 如實回報(`success` 為 null 不是 0);三個送出工具的 `customAggregationUnit` 在**提出時**就檢查,並存在待發項目的 `PayloadJson`(欄位 `customAggregationUnit`,舊項目沒有此欄位照常核准)、核准時才帶進 `LinePushOptions`。
 
 ## 本專案特有規則(踩坑紀錄)
 
+- **`[JsonConverter]` 掛在基底類別不會被衍生型別繼承**:`JsonSerializer.Serialize(new TextMessage("x"))` 的型別參數推導成 `TextMessage`,沒有轉換器就退回反射,寫出 PascalCase 的錯誤 JSON 而且沒有任何錯誤(只有以 `LineMessage` / `LineAction` 為型別參數才對)。0.3.0 起**每個具體的 `LineMessage` / `LineAction` 子類都掛 `[JsonConverter(typeof(LineMessageJsonConverterFactory))]` / `LineActionJsonConverterFactory`**;**新增子類時必須一併掛上**,`LineConcreteTypeSerializationTests` 會逐型別比對與基底型別序列化的輸出。
+- **MCP 測試專案以萬用字元 Link 核心測試的 `FakeLineMessagingClient*.cs`**(csproj 的 `<Compile Include="…\FakeLineMessagingClient*.cs">`)。`ILineMessagingClient` 與假用戶端都拆成 partial 檔,逐檔 Link 會在新增 partial 時漏掉一個,症狀是 MCP 測試專案編譯不過(假用戶端少實作介面成員)。新增 partial 檔名要維持 `FakeLineMessagingClient.<Name>.cs`。
+- **`.claude/worktrees/` 已 gitignore**:Claude Code 代理的暫時 worktree 是工具產物,絕不進版控(不要 `git add -f`)。
 - **`HttpPipelineClient.SendAsync` 不會因為非 2xx 而失敗**,`SendForStringAsync` 才會(它產生 `http.status.NNN` 錯誤並帶上 `body` / `retryAfterSeconds`)。所以 JSON 端點一律走 `LineHttp.SendForJsonAsync`;只有二進位的 `GetMessageContentAsync` 走 `SendAsync`,並自己呼叫 `HttpErrorMapper.FromResponseAsync` 補上同一套錯誤加工。
 - **請求的擁有權**:`LineHttp.*` 會 `using` 掉傳進去的 `HttpRequestMessage`,呼叫端不要再包一層 `using`;直接用 `_http.SendAsync` 的路徑才由呼叫端自己釋放。
 - **`Uri.ToString()` 會把 `%20` 還原成空白**,驗證編碼的測試要比對 `AbsoluteUri`。

@@ -337,6 +337,159 @@ The animation shows only in one-to-one chats and only while the user has the cha
 
 ---
 
+## textV2: mentions and emoji
+
+`TextMessage` can carry LINE emoji by index, and `TextV2Message` is the newer text message that resolves `{key}` placeholders through a substitution map — which is the only way to mention someone.
+
+```csharp
+await line.PushAsync(groupId, [
+    new TextV2Message("Hi {everyone}, {reporter} filed a new record {sparkle}")
+    {
+        Substitution =
+        {
+            ["everyone"] = LineTextSubstitution.MentionAll(),
+            ["reporter"] = LineTextSubstitution.Mention(userId),
+            ["sparkle"]  = LineTextSubstitution.Emoji("5ac1bfd5040ab15980c9b435", "001"),
+        },
+    },
+]);
+
+await line.PushAsync(userId, [
+    new TextMessage("$ New record") { Emojis = { new LineTextEmoji(0, "5ac1bfd5040ab15980c9b435", "001") } },
+]);
+```
+
+LINE finds the placeholder itself, so a surrogate pair or a CJK character before it cannot shift it the way a character index can. Every `{key}` in the text must exist in `Substitution`, and every key must be referenced at least once; a key may only contain letters, digits and underscores. Breaking either rule fails locally as `line.validation.invalid_message`. Incoming mentions, emoji, quoted messages and image sets are typed on `LineWebhookMessage` (`Mention`, `Emojis`, `QuotedMessageId`, `ImageSet`).
+
+---
+
+## Bulk send
+
+A push takes at most 5 messages and a multicast at most 500 recipients. `PushManyAsync` and `MulticastManyAsync` take any number of either and cut them into legal requests.
+
+```csharp
+var sent = await line.MulticastManyAsync(allUserIds, messages, new LinePushOptions { RetryKey = jobId });
+
+if (sent.TryGetValue(out var ok))
+{
+    // ok.BatchCount, ok.TotalMessages, ok.SentMessages
+}
+else
+{
+    var error = sent.Error;
+    // error.Data[LineBulkSendErrorDataKeys.SentBatches]       how many batches already went out
+    // error.Data[LineBulkSendErrorDataKeys.FailedBatchIndex]  the one that failed, from 0
+}
+```
+
+- **Batches go out in order, and the first failure stops the run.** The error keeps the failing batch's own code and category — a 429 stays `RateLimited` — and adds `sentBatches` and `failedBatchIndex`. For a multicast the index is `recipientBatch × messageBatchCount + messageBatch`.
+- **The whole input is validated before the first batch.** A bad message in batch four is found before batch one is sent, not after.
+- **Zero messages is `too_many_messages` and zero recipients is `line.validation.no_recipients`**, not a quiet success.
+- **`RetryKey` is per batch, derived from yours.** Each batch's key is the first 16 bytes of `SHA256(your key's 16 bytes + the batch index as 4 big-endian bytes)` with the UUID version-5 and RFC 4122 bits set (`LineBulkSendRetryKey.Derive`). Retrying the whole call with the same key therefore cannot duplicate a batch LINE already accepted. A single batch derives a key too. Without a `RetryKey` nothing is retried.
+- **There is no `ReplyManyAsync` on purpose.** A reply token is single-use and short-lived, so a reply cannot be spread over several requests: `ReplyAsync` takes at most 5 messages, and more than that belongs in a push.
+
+---
+
+## Stats and insight
+
+```csharp
+var count = await line.GetMessageDeliveryCountAsync(LineMessageDeliveryType.Push, new DateOnly(2026, 10, 26));
+// count.Status: Ready | Unready | OutOfService | Unknown;  count.Success is null unless Ready
+
+await line.PushAsync(userId, messages, new LinePushOptions { CustomAggregationUnits = ["autumn_sale"] });
+
+var byUnit = await line.GetMessageEventInsightByUnitAsync("autumn_sale", new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30));
+var bySend = await line.GetMessageEventInsightAsync(requestId);     // the X-Line-Request-Id of one send
+var used   = await line.GetAggregationUnitUsageAsync();             // units used this month
+var names  = await line.GetAggregationUnitNamesAsync(limit: 100);
+```
+
+LINE counts days in **JST (UTC+9)**, so the hour between midnight and 1 a.m. in Taiwan belongs to the previous day. A figure that is not `Ready` is `null`, which is not zero. A statistics unit is checked before sending: at most one per request, at most 30 letters, digits or underscores (`line.validation.invalid_aggregation_unit`); `CustomAggregationUnits` works on push, multicast, broadcast and narrowcast. `GetMessageEventInsightByUnitAsync` takes `from` not after `to` and at most 30 days apart (`line.validation.invalid_date_range`).
+
+Rich menus have a batch endpoint of their own — one request relinks or unlinks up to 1000 users' menus and returns a request id:
+
+```csharp
+var requestId = await line.ReplaceOrUnlinkRichMenusInBatchAsync([
+    LineRichMenuBatchOperation.Link("richmenu-old", "richmenu-new"),
+    LineRichMenuBatchOperation.Unlink("richmenu-retired"),
+]);
+var progress = await line.GetRichMenuBatchProgressAsync(requestId.GetValueOrThrow());
+```
+
+`ValidateRichMenuBatchAsync` runs the same check without applying anything. One to 1000 operations are accepted (`line.validation.invalid_rich_menu_batch`).
+
+---
+
+## Webhook endpoint, account linking and message content
+
+```csharp
+var current = await line.GetWebhookEndpointAsync();                 // endpoint + whether it is active
+await line.SetWebhookEndpointAsync("https://example.com/line/webhook");
+var test = await line.TestWebhookEndpointAsync();                   // or TestWebhookEndpointAsync("https://…")
+// test.GetValueOrThrow().Success / StatusCode / Reason — see below
+```
+
+The address must be https and at most 500 characters, or the call fails locally as `line.validation.invalid_webhook_endpoint`. **A test whose far end does not answer 2xx is still a successful call**: LINE reports what the server said, so read `Success`, `StatusCode` and `Reason` rather than the `Result`.
+
+`IssueLinkTokenAsync(userId)` returns the link token an account-linking flow redirects with. `GetMessageContentPreviewAsync(messageId)` downloads the preview of an image or video, and `GetMessageContentTranscodingStatusAsync(messageId)` says whether a video is ready to download; a status string the package does not know fails as `line.api.invalid_response` rather than being guessed at.
+
+---
+
+## LIFF
+
+`ILineLiffClient` manages the LIFF apps of a LINE Login channel from your server.
+
+```csharp
+builder.Services.AddLineLiff(o =>
+    o.ChannelAccessToken = builder.Configuration["Line:Login:ChannelAccessToken"]!);   // the LOGIN channel's token
+
+var added = await liff.AddAsync(new LineLiffApp
+{
+    View = new LineLiffView { Type = LineLiffViewType.Tall, Url = "https://example.com/booking" },
+    Description = "Booking page",
+    BotPrompt = "normal",
+});
+var liffId = added.GetValueOrThrow();   // open it at https://liff.line.me/{liffId}
+
+var all = await liff.GetAllAsync();     // 404 (no apps) is a successful empty list
+await liff.DeleteAsync(liffId);
+```
+
+⚠ **LIFF uses the LINE Login channel's token, not the Messaging API's.** `AddLineLiff` therefore takes its own `LineLiffOptions` and registers its own named `HttpClient` (`LineHttpClientNames.Liff`); handing it the Messaging channel's token is a mix-up the package cannot detect, and LINE's refusal will not name it. Blank credentials fail as `line.not_configured` without sending anything. `UpdateAsync(liffId, app)` sends only the fields you set and never the `liffId`, and an app that breaks the specification fails locally as `line.validation.invalid_liff_app`. A second overload, `AddLineLiff(IConfiguration)`, binds the options from configuration.
+
+---
+
+## What is checked before anything is sent
+
+Every limit below fails on your machine with a named code and **no request is sent** — LINE's own answer to most of them is a 400 that says only "the request body has 1 error".
+
+| What | Limit | Code |
+| --- | --- | --- |
+| Messages per request | 1 to 5 | `too_many_messages` |
+| Multicast recipients | 1 to 500 | `too_many_recipients` |
+| Quick reply buttons | 1 to 13 | `too_many_quick_reply_items` |
+| `text` / `textV2` | at most 5000 characters | `invalid_message` |
+| `altText` | at most 400 characters | `invalid_message` |
+| Location `title` / `address` | at most 100 characters each | `invalid_message` |
+| Media URLs | https, at most 2000 characters | `invalid_message` |
+| Colours | `#RRGGBB` | `invalid_message` |
+| `textV2` placeholders | every `{key}` in `Substitution`, every key referenced | `invalid_message` |
+| Action `label` | at most 20 (imagemap 50, image carousel 12) | `invalid_action` |
+| `postback` data | at most 300 characters | `invalid_action` |
+| `uri` action | scheme from an allow-list | `invalid_action` |
+| Rich menu area actions | each one checked, the area named in the message | `invalid_action` |
+| Template and imagemap shape | see above | `invalid_template` / `invalid_imagemap` |
+| Statistics unit | one per request, 30 letters, digits or underscores | `invalid_aggregation_unit` |
+| Statistics range | `from` ≤ `to`, at most 30 days | `invalid_date_range` |
+| Rich menu batch | 1 to 1000 operations | `invalid_rich_menu_batch` |
+| Webhook address | https, at most 500 characters | `invalid_webhook_endpoint` |
+| LIFF app | the specification's required fields | `invalid_liff_app` |
+| Bulk send | at least one message, at least one recipient | `too_many_messages` / `no_recipients` |
+
+`RawMessage` and `RawAction` are **not** checked: they are the way out when LINE adds something this package has not caught up with, and their content is yours to get right. The same goes for a rich menu read by an MCP tool, whose actions are always `RawAction`.
+
+---
+
 ## Letting an outside AI operate the account: `Ozakboy.Line.Mcp`
 
 The above as a set of MCP tools, so Claude, a custom connector, or any MCP client can read the account's state, draft broadcasts, edit rules and templates, and replace rich menus.
@@ -385,14 +538,17 @@ The tools:
 
 | Group | Tools |
 | --- | --- |
-| Reading | `line_get_bot_info` · `line_get_quota` · `line_get_profile` |
+| Reading | `line_get_bot_info` · `line_get_quota` · `line_get_profile` · `line_get_webhook_info` · `line_test_webhook` · `line_get_delivery_stats` · `line_get_message_event_insight` |
 | Sending (reviewed) | `line_send_push` · `line_send_multicast` · `line_send_broadcast` |
 | Outbox | `line_list_outbox` · `line_get_outbox` · `line_cancel_outbox` |
 | Rich menus | `line_list_rich_menus` · `line_get_default_rich_menu` · `line_list_rich_menu_aliases` · `line_validate_rich_menu` · `line_replace_rich_menu` (reviewed) |
 | Auto reply | `line_list_auto_replies` · `line_upsert_auto_reply` · `line_delete_auto_reply` · `line_test_auto_reply` |
 | Templates | `line_list_templates` · `line_get_template` · `line_upsert_template` · `line_delete_template` · `line_render_template` |
+| LIFF | `line_list_liff_apps` · `line_create_liff_app` · `line_delete_liff_app` |
 
 The rule and template tools **skip the review queue**, because they send nothing by themselves: a broken rule answers wrongly rather than reaching out to everyone uninvited, and undoing it is one more upsert. To forbid them outright there are `AllowRuleEdits`, `AllowTemplateEdits` and `AllowRichMenuChanges`. Where the host has not called `AddLineTemplates` or `AddLineAutoReply`, those tools are still mounted and answer that the feature is off — which says more than their absence would.
+
+The four new reading tools (`line_get_webhook_info`, `line_test_webhook`, `line_get_delivery_stats`, `line_get_message_event_insight`) change nothing and do not count against the daily cap. `line_get_delivery_stats` takes one `yyyy-MM-dd` date and answers for reply, push, multicast and broadcast at once; a channel whose figures are not ready is reported as `unready` with a null count, not zero. The LIFF tools need `ILineLiffClient`, so they answer `line.not_configured` where the host has not called `AddLineLiff`. **Creating and deleting a LIFF app skip the review queue**: they change the account's configuration rather than send a message, so each writes a log line instead — and deleting one breaks every link that points at it. The three sending tools take an optional `customAggregationUnit`, checked when proposed and stored with the outbox item, so the unit is applied at approval time.
 
 ---
 
@@ -443,12 +599,28 @@ The rule and template tools **skip the review queue**, because they send nothing
 | Chat and validation | `StartLoadingAnimationAsync` · `MarkAsReadAsync` · `ValidateMessagesAsync` · `ValidateMessagesRawJsonAsync` |
 | Narrowcast and audiences | `NarrowcastAsync` · `GetNarrowcastProgressAsync` · `CreateUploadAudienceGroupAsync` · `AddAudienceGroupMembersAsync` · `GetAudienceGroupAsync` · `GetAudienceGroupListAsync` · `DeleteAudienceGroupAsync` |
 | Insights | `GetMessageDeliveryInsightAsync` · `GetFollowersInsightAsync` · `GetDemographicInsightAsync` |
+| Bulk send | `PushManyAsync` · `MulticastManyAsync` (with `LineBulkSendResult`, `LineBulkSendRetryKey.Derive`, `LineBulkSendErrorDataKeys`) |
+| Stats and units | `GetMessageDeliveryCountAsync` · `GetMessageEventInsightAsync` · `GetMessageEventInsightByUnitAsync` · `GetAggregationUnitUsageAsync` · `GetAggregationUnitNamesAsync` (units are set through `LinePushOptions.CustomAggregationUnits`, narrowcast included) |
+| Rich menu batch | `ReplaceOrUnlinkRichMenusInBatchAsync` · `ValidateRichMenuBatchAsync` · `GetRichMenuBatchProgressAsync` (with `LineRichMenuBatchOperation.Link` / `Unlink` / `UnlinkAll`) |
+| Webhook endpoint | `GetWebhookEndpointAsync` · `SetWebhookEndpointAsync` · `TestWebhookEndpointAsync` |
+| Account linking and content | `IssueLinkTokenAsync` · `GetMessageContentPreviewAsync` · `GetMessageContentTranscodingStatusAsync` |
 
-Message types: `TextMessage`, `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
+Message types: `TextMessage` (with `Emojis`), `TextV2Message` (with `LineTextSubstitution`), `ImageMessage`, `VideoMessage`, `AudioMessage`, `LocationMessage`, `StickerMessage`, `FlexMessage`, `TemplateMessage` (with `ButtonsTemplate`, `ConfirmTemplate`, `CarouselTemplate`, `ImageCarouselTemplate`), `ImagemapMessage` (with `ImagemapUriAction`, `ImagemapMessageAction`, `LineImagemapVideo`), and `RawMessage` for anything not modelled yet. Every message has `QuickReply`, `Sender` and `Validate()`. Actions: `UriAction`, `MessageAction`, `PostbackAction`, `DatetimePickerAction`, `CameraAction`, `CameraRollAction`, `LocationAction`, `ClipboardAction`, `RichMenuSwitchAction`, `RawAction`. Quick replies: `LineQuickReply` and `LineQuickReplyItem`.
 
 `ReplaceRichMenuAsync` runs create, upload, set-as-default, repoint-the-alias and delete-the-old-menu as one call. Its failure handling is asymmetric on purpose: **a failed image upload deletes the menu just created**, since a menu without an image is worse than no menu, while **a failed deletion of the old menu is only logged and the call still succeeds**, since the new menu is already live and reporting a failure would have the caller redo it and end up with one menu more.
 
 The `*RawJsonAsync` overloads accept either a single message object or an array of them, and wrap either into `{"messages": […]}`. They are the way out when LINE adds something this package has not caught up with.
+
+### `ILineLiffClient`
+
+| Member | What it does |
+| --- | --- |
+| `AddAsync(app)` | Creates a LIFF app and returns its `liffId`. |
+| `UpdateAsync(liffId, app)` | Changes the fields that are set; never sends the `liffId`. |
+| `GetAllAsync()` | Lists the apps; a 404 is a successful empty list. |
+| `DeleteAsync(liffId)` | Deletes an app. |
+
+Registered with `AddLineLiff(options)` or `AddLineLiff(configuration)`, using the Login channel's token on its own named `HttpClient`.
 
 ### Templates and auto reply
 
@@ -471,7 +643,7 @@ The `*RawJsonAsync` overloads accept either a single message object or an array 
 | --- | --- |
 | `AddLineMcp(configure, stores?)` | The settings, the outbox, the outbox service, and the named HTTP client used to fetch images. |
 | `AddLineMcpServer(configure, stores?)` | All of the above plus a stateless MCP server carrying just the LINE tools. |
-| `IMcpServerBuilder.WithLineTools()` | Adds the six tool sets to an MCP server the host already has. |
+| `IMcpServerBuilder.WithLineTools()` | Adds the seven tool sets to an MCP server the host already has. |
 | `UseLineMcpKeyGate(prefix?)` | The key gate. **Must come before `UseRouting`.** |
 | `UseLineMcpWellKnownNotFound()` | A clean 404 for everything under `/.well-known/`. |
 | `MapLineMcp(prefix?)` | The MCP endpoint, on the same prefix the gate uses. |
@@ -490,10 +662,12 @@ Outbox statuses: `PendingReview` → `Approved` / `Sent` / `Failed` / `Rejected`
 | `MapLineWebhook(pattern, handler)` | The endpoint. One overload per event, one for the whole payload. |
 | `MapLineWebhook(pattern, configure, handler)` | The same, with `LineWebhookEndpointOptions.AutoReply` to run auto reply first. |
 | `LineWebhookItems.AutoReplyOutcome` | The `HttpContext.Items` key the auto reply outcome lands under. |
+| `LineWebhookEvent.Joined` / `Left` / `Beacon` / `Unsend` / `Link` / `Membership` | Typed payloads for member join and leave, beacons, unsent messages, account linking and membership events (`LineWebhookBeaconTypes`, `LineWebhookLinkResults`, `LineWebhookMembershipTypes` name the strings). |
+| `LineWebhookMessage.Emojis` / `Mention` / `ImageSet` / `QuotedMessageId` / `MarkAsReadToken` / `StickerResourceType` / `Keywords` | Typed message fields; anything unmodelled is still in `Raw`. |
 
 ### Error codes
 
-`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
+`line.not_configured` · `line.validation.too_many_recipients` · `line.validation.too_many_messages` · `line.validation.invalid_json` · `line.validation.too_many_quick_reply_items` · `line.validation.invalid_template` · `line.validation.invalid_imagemap` · `line.validation.invalid_loading_seconds` · `line.validation.invalid_page_size` · `line.validation.too_many_audience_members` · `line.validation.missing_template_variables` · `line.validation.invalid_auto_reply_rule` · `line.validation.invalid_message` · `line.validation.invalid_action` · `line.validation.invalid_webhook_endpoint` · `line.validation.invalid_liff_app` · `line.validation.invalid_date_range` · `line.validation.invalid_aggregation_unit` · `line.validation.invalid_rich_menu_batch` · `line.validation.no_recipients` · `line.mcp.outbox_not_found` · `line.mcp.outbox_invalid_status` · `line.mcp.image_fetch_failed` · `line.api.error` · `line.api.invalid_response` · `line.id_token.invalid_format` · `line.id_token.unsupported_algorithm` · `line.id_token.invalid_signature` · `line.id_token.invalid_issuer` · `line.id_token.invalid_audience` · `line.id_token.expired` · `line.id_token.nonce_mismatch` · `line.webhook.invalid_signature` · `line.webhook.invalid_payload`
 
 These are a public contract and do not change once published.
 
