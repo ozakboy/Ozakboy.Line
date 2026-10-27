@@ -48,6 +48,7 @@ public static class LineMcpServerBuilderExtensions
             .WithTools<LineRichMenuTools>()
             .WithTools<LineLiffTools>()
             .WithTools<LineAutoReplyTools>()
-            .WithTools<LineTemplateTools>();
+            .WithTools<LineTemplateTools>()
+            .WithTools<LineFlexTools>();
     }
 }

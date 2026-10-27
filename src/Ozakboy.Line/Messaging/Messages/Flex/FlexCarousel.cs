@@ -8,8 +8,8 @@ namespace Ozakboy.Line.Messaging.Messages.Flex;
 /// The carousel container (<c>carousel</c>): several <see cref="FlexBubble"/>s laid out side by side.
 /// </summary>
 /// <remarks>
-/// LINE 限制輪播最多 12 個氣泡;這個上限不在這一版的模型裡檢查。
-/// LINE caps a carousel at 12 bubbles; this version of the model does not check that limit.
+/// LINE 限制輪播 1~12 個氣泡;<see cref="FlexMessage.Validate"/> 在送出前檢查這個範圍。
+/// LINE allows 1 to 12 bubbles in a carousel; <see cref="FlexMessage.Validate"/> checks that range before sending.
 /// </remarks>
 [JsonConverter(typeof(FlexContainerJsonConverterFactory))]
 public sealed class FlexCarousel : FlexContainer

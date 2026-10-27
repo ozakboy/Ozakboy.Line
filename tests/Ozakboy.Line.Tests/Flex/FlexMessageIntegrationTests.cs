@@ -74,8 +74,9 @@ public sealed class FlexMessageIntegrationTests
     {
         var tooLong = new string('x', LineMessagingLimits.MaxAltTextLength + 1);
 
-        var typedFailure = new FlexMessage(tooLong, new FlexBubble()).Validate();
-        var typedOk = new FlexMessage(new string('x', LineMessagingLimits.MaxAltTextLength), new FlexBubble()).Validate();
+        var bubble = new FlexBubble { Body = new FlexBox { Layout = FlexLayout.Vertical, Contents = [new FlexText("x")] } };
+        var typedFailure = new FlexMessage(tooLong, bubble).Validate();
+        var typedOk = new FlexMessage(new string('x', LineMessagingLimits.MaxAltTextLength), bubble).Validate();
         var jsonFailure = FlexMessage.FromJson(tooLong, SampleJson).GetValueOrThrow().Validate();
 
         Assert.IsTrue(typedFailure.IsFailure);

@@ -178,13 +178,32 @@ public sealed class FlexMessage : LineMessage
     }
 
     /// <summary>
-    /// 送出前的本地檢查:替代文字不超過 400 字。
-    /// The local check before sending: the alternative text is at most 400 characters.
+    /// 送出前的本地檢查:替代文字不超過 400 字、強型別版面的結構與欄位格式、整體 JSON 大小。
+    /// The local check before sending: the alternative text is at most 400 characters, the structure and field formats of a
+    /// typed layout, and the overall JSON size.
     /// </summary>
     /// <returns>
-    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidMessage"/> 失敗(快速回覆的問題照該處的代碼)。
-    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidMessage"/> failure (quick reply problems keep their own codes).
+    /// 通過時為成功;替代文字過長為 <see cref="LineErrorCodes.InvalidMessage"/>、版面問題為
+    /// <see cref="LineErrorCodes.InvalidFlex"/>(訊息帶版面路徑,例如 <c>contents[2].body.contents[0].url</c>)、
+    /// Flex 內動作的問題為 <see cref="LineErrorCodes.InvalidAction"/>(快速回覆的問題照該處的代碼)。
+    /// Success when it passes. An over-long alternative text is <see cref="LineErrorCodes.InvalidMessage"/>, a layout problem is
+    /// <see cref="LineErrorCodes.InvalidFlex"/> (the message carries the layout path, such as
+    /// <c>contents[2].body.contents[0].url</c>), a problem in an action inside the layout is
+    /// <see cref="LineErrorCodes.InvalidAction"/> (quick reply problems keep their own codes).
     /// </returns>
+    /// <remarks>
+    /// <para>
+    /// 結構與欄位格式只檢查強型別節點;<see cref="RawFlexContainer"/> / <see cref="RawFlexComponent"/> 與原樣 JSON 路徑
+    /// (<see cref="Contents"/>)是逃生口,內容不驗,只套用整體大小上限。
+    /// Structure and field formats are checked on typed nodes only; <see cref="RawFlexContainer"/>, <see cref="RawFlexComponent"/> and
+    /// the verbatim JSON path (<see cref="Contents"/>) are the escape hatch, their content is not checked and only the overall size
+    /// limit applies.
+    /// </para>
+    /// <para>
+    /// 含 <see cref="FlexVideo"/> 的氣泡能否放進輪播,本檢查不擋,以 LINE 的回應為準。
+    /// Whether a bubble holding a <see cref="FlexVideo"/> may sit in a carousel is not checked here; LINE's response is the authority.
+    /// </para>
+    /// </remarks>
     public override Result Validate()
     {
         var baseResult = base.Validate();
@@ -193,10 +212,17 @@ public sealed class FlexMessage : LineMessage
             return baseResult;
         }
 
-        return LineMessageValidation.IsTooLong(AltText, LineMessagingLimits.MaxAltTextLength)
-            ? LineMessageValidation.InvalidMessage(
-                LineMessageValidation.TooLong("Flex 訊息的 altText", AltText, LineMessagingLimits.MaxAltTextLength))
-            : Result.Success();
+        if (LineMessageValidation.IsTooLong(AltText, LineMessagingLimits.MaxAltTextLength))
+        {
+            return LineMessageValidation.InvalidMessage(
+                LineMessageValidation.TooLong("Flex 訊息的 altText", AltText, LineMessagingLimits.MaxAltTextLength));
+        }
+
+        var error = Container is { } container
+            ? FlexValidator.ValidateContainer(container)
+            : FlexValidator.ValidateVerbatim(Contents);
+
+        return error is null ? Result.Success() : Result.Failure(error);
     }
 
     /// <inheritdoc />

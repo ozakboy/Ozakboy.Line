@@ -40,6 +40,22 @@ public abstract class FlexContainer
     public abstract string Type { get; }
 
     /// <summary>
+    /// 列出版面裡以 Raw 型別原樣保存的節點路徑(例如 <c>contents[1].body.contents[0]</c>);容器自己是 Raw 時路徑為空字串。
+    /// Lists the paths of the nodes kept verbatim as Raw types (such as <c>contents[1].body.contents[0]</c>); the path is
+    /// empty when the container itself is Raw.
+    /// </summary>
+    /// <returns>
+    /// 依文件順序的路徑;全是強型別時為空清單。這些節點不經 <see cref="FlexMessage.Validate"/> 檢查。
+    /// The paths in document order, an empty list when everything is typed. These nodes are not checked by
+    /// <see cref="FlexMessage.Validate"/>.
+    /// </returns>
+    /// <remarks>
+    /// 讀回 JSON 時動作一律是 <see cref="Ozakboy.Line.Messaging.Actions.RawAction"/>,不算在這裡。
+    /// Actions read from JSON are always <see cref="Ozakboy.Line.Messaging.Actions.RawAction"/> and are not counted here.
+    /// </remarks>
+    public IReadOnlyList<string> GetRawNodePaths() => FlexRawScanner.Scan(this);
+
+    /// <summary>
     /// 把整個容器寫成一個 JSON 物件。
     /// Writes the whole container as one JSON object.
     /// </summary>
