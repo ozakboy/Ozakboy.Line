@@ -58,12 +58,17 @@ public sealed class ConfirmTemplate : LineTemplate
     public IList<LineAction> Actions { get; }
 
     /// <inheritdoc />
-    public override Result Validate() =>
-        Actions.Count == LineMessagingLimits.ConfirmTemplateActions
-            ? Result.Success()
-            : Invalid(string.Create(
+    public override Result Validate()
+    {
+        if (Actions.Count != LineMessagingLimits.ConfirmTemplateActions)
+        {
+            return Invalid(string.Create(
                 CultureInfo.InvariantCulture,
                 $"確認範本需帶恰好 {LineMessagingLimits.ConfirmTemplateActions} 個動作,這次是 {Actions.Count} 個。A confirm template takes exactly {LineMessagingLimits.ConfirmTemplateActions} actions; {Actions.Count} were supplied."));
+        }
+
+        return ValidateActions(Actions, LineMessagingLimits.MaxActionLabelLength, "template.actions");
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

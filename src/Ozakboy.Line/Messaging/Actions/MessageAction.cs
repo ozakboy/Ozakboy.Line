@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -37,6 +39,13 @@ public sealed class MessageAction : LineAction
     /// The text to send.
     /// </summary>
     public string Text { get; }
+
+    /// <inheritdoc />
+    internal override Result ValidateBody(string location) =>
+        LineMessageValidation.IsTooLong(Text, LineMessagingLimits.MaxMessageActionTextLength)
+            ? LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type=message)的 text", Text, LineMessagingLimits.MaxMessageActionTextLength))
+            : Result.Success();
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer) => writer.WriteString("text", Text);

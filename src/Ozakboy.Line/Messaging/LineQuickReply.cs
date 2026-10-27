@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging;
 
@@ -33,14 +34,17 @@ public sealed class LineQuickReply
     public IList<LineQuickReplyItem> Items { get; } = [];
 
     /// <summary>
-    /// 檢查按鈕數是否在允許範圍內。
-    /// Checks that the number of buttons is within the allowed range.
+    /// 檢查按鈕數是否在允許範圍內,以及每顆按鈕的圖示位址與動作是否合規格。
+    /// Checks that the number of buttons is within the allowed range, and that every button's icon address and
+    /// action meet the specification.
     /// </summary>
     /// <returns>
-    /// 1 到 <see cref="LineMessagingLimits.MaxQuickReplyItems"/> 個時為成功,否則為
-    /// <see cref="LineErrorCodes.TooManyQuickReplyItems"/> 失敗。
-    /// Success for between one and <see cref="LineMessagingLimits.MaxQuickReplyItems"/> buttons, otherwise a
-    /// <see cref="LineErrorCodes.TooManyQuickReplyItems"/> failure.
+    /// 全部通過時為成功;按鈕數不對是 <see cref="LineErrorCodes.TooManyQuickReplyItems"/> 失敗,
+    /// 圖示位址不是 HTTPS 或過長是 <see cref="LineErrorCodes.InvalidMessage"/> 失敗,
+    /// 動作不合規格是 <see cref="LineErrorCodes.InvalidAction"/> 失敗。
+    /// Success when everything passes. A wrong button count is a <see cref="LineErrorCodes.TooManyQuickReplyItems"/>
+    /// failure, an icon address that is not HTTPS or too long is an <see cref="LineErrorCodes.InvalidMessage"/>
+    /// failure, and an action that breaks the specification is an <see cref="LineErrorCodes.InvalidAction"/> failure.
     /// </returns>
     /// <remarks>
     /// 零個按鈕也算失敗,而不是「當作沒設定」。掛了一個空的快速回覆,幾乎都是迴圈沒跑到或條件寫反了,
@@ -49,14 +53,37 @@ public sealed class LineQuickReply
     /// means a loop that did not run or a condition the wrong way round, and quietly sending a message without
     /// buttons only lets that bug live longer.
     /// </remarks>
-    public Result Validate() =>
-        Items.Count is >= 1 and <= LineMessagingLimits.MaxQuickReplyItems
-            ? Result.Success()
-            : Error.Validation(
+    public Result Validate()
+    {
+        if (Items.Count is < 1 or > LineMessagingLimits.MaxQuickReplyItems)
+        {
+            return Error.Validation(
                 LineErrorCodes.TooManyQuickReplyItems,
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"快速回覆需帶 1 到 {LineMessagingLimits.MaxQuickReplyItems} 個按鈕,這次是 {Items.Count} 個。A quick reply takes between 1 and {LineMessagingLimits.MaxQuickReplyItems} buttons; {Items.Count} were supplied."));
+        }
+
+        for (var index = 0; index < Items.Count; index++)
+        {
+            var item = Items[index];
+            var location = string.Create(CultureInfo.InvariantCulture, $"quickReply.items[{index}]");
+
+            if (!string.IsNullOrWhiteSpace(item.ImageUrl)
+                && LineMessageValidation.CheckMediaUrl($"{location}.imageUrl", item.ImageUrl) is { } problem)
+            {
+                return LineMessageValidation.InvalidMessage(problem);
+            }
+
+            var action = item.Action.Validate(LineMessagingLimits.MaxActionLabelLength, $"{location}.action");
+            if (action.IsFailure)
+            {
+                return action;
+            }
+        }
+
+        return Result.Success();
+    }
 
     /// <summary>
     /// 寫出 <c>{ "items": [...] }</c>。

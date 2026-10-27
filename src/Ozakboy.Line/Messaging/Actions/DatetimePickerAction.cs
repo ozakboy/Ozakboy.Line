@@ -1,4 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -102,6 +105,71 @@ public sealed class DatetimePickerAction : LineAction
     /// The smallest selectable value.
     /// </summary>
     public string? Min { get; }
+
+    /// <summary>
+    /// 檢查 <c>data</c> 長度、<c>initial</c> / <c>min</c> / <c>max</c> 的格式是否符合 <see cref="Mode"/>,以及 <c>max</c> 不早於 <c>min</c>。
+    /// Checks the length of <c>data</c>, that <c>initial</c>, <c>min</c> and <c>max</c> match the format of
+    /// <see cref="Mode"/>, and that <c>max</c> is not earlier than <c>min</c>.
+    /// </summary>
+    /// <param name="location">動作所在位置的描述。A description of where the action sits.</param>
+    /// <returns>通過時為成功。Success when it passes.</returns>
+    /// <remarks>
+    /// 模式本身不在這裡檢查:建構子已經擋掉 date / time / datetime 以外的值。
+    /// The mode itself is not checked here: the constructor already refuses anything but date, time, or datetime.
+    /// </remarks>
+    internal override Result ValidateBody(string location)
+    {
+        var where = $"{location}(type=datetimepicker)";
+        if (LineMessageValidation.IsTooLong(Data, LineMessagingLimits.MaxPostbackDataLength))
+        {
+            return LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{where}的 data", Data, LineMessagingLimits.MaxPostbackDataLength));
+        }
+
+        var format = FormatOf(Mode);
+        DateTime? min = null;
+        DateTime? max = null;
+        foreach (var (name, value) in new[] { ("initial", Initial), ("min", Min), ("max", Max) })
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            if (!DateTime.TryParseExact(value, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            {
+                return LineMessageValidation.InvalidAction(
+                    $"{where}的 {name} 格式不符:mode={Mode} 時必須是 {format},實際是:{LineMessageValidation.Quote(value)}。The {name} of {where} has the wrong format: with mode={Mode} it must be {format}, but is: {LineMessageValidation.Quote(value)}.");
+            }
+
+            if (name == "min")
+            {
+                min = parsed;
+            }
+            else if (name == "max")
+            {
+                max = parsed;
+            }
+        }
+
+        return min is { } lower && max is { } upper && upper < lower
+            ? LineMessageValidation.InvalidAction(
+                $"{where}的 max({Max})早於 min({Min})。The max ({Max}) of {where} is earlier than its min ({Min}).")
+            : Result.Success();
+    }
+
+    /// <summary>
+    /// 取得某個模式對應的時間格式。
+    /// Gets the time format that goes with a mode.
+    /// </summary>
+    /// <param name="mode">模式。The mode.</param>
+    /// <returns>格式字串。The format string.</returns>
+    private static string FormatOf(string mode) => mode switch
+    {
+        ModeDate => "yyyy-MM-dd",
+        ModeTime => "HH:mm",
+        _ => "yyyy-MM-ddTHH:mm",
+    };
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

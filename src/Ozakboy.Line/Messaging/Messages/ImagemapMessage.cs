@@ -105,13 +105,32 @@ public sealed class ImagemapMessage : LineMessage
             return quickReply;
         }
 
-        return Actions.Count is >= 1 and <= LineMessagingLimits.MaxImagemapActions
-            ? Result.Success()
-            : Error.Validation(
+        if (Actions.Count is < 1 or > LineMessagingLimits.MaxImagemapActions)
+        {
+            return Error.Validation(
                 LineErrorCodes.InvalidImagemap,
                 string.Create(
                     CultureInfo.InvariantCulture,
                     $"圖片地圖需帶 1 到 {LineMessagingLimits.MaxImagemapActions} 塊區域,這次是 {Actions.Count} 塊。An imagemap takes between 1 and {LineMessagingLimits.MaxImagemapActions} areas; {Actions.Count} were supplied."));
+        }
+
+        if (LineMessageValidation.IsTooLong(AltText, LineMessagingLimits.MaxAltTextLength))
+        {
+            return Error.Validation(
+                LineErrorCodes.InvalidImagemap,
+                LineMessageValidation.TooLong("圖片地圖的 altText", AltText, LineMessagingLimits.MaxAltTextLength));
+        }
+
+        for (var index = 0; index < Actions.Count; index++)
+        {
+            var validated = Actions[index].Validate(string.Create(CultureInfo.InvariantCulture, $"actions[{index}]"));
+            if (validated.IsFailure)
+            {
+                return validated;
+            }
+        }
+
+        return Result.Success();
     }
 
     /// <inheritdoc />

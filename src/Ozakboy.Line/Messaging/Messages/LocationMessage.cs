@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages;
 
@@ -57,6 +58,34 @@ public sealed class LocationMessage : LineMessage
     /// The longitude.
     /// </summary>
     public double Longitude { get; }
+
+    /// <summary>
+    /// 送出前的本地檢查:標題與地址各不超過 100 字。
+    /// The local check before sending: the title and the address are each at most 100 characters.
+    /// </summary>
+    /// <returns>
+    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidMessage"/> 失敗(快速回覆的問題照該處的代碼)。
+    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidMessage"/> failure (quick reply problems keep their own codes).
+    /// </returns>
+    public override Result Validate()
+    {
+        var baseResult = base.Validate();
+        if (baseResult.IsFailure)
+        {
+            return baseResult;
+        }
+
+        if (LineMessageValidation.IsTooLong(Title, LineMessagingLimits.MaxLocationTitleLength))
+        {
+            return LineMessageValidation.InvalidMessage(
+                LineMessageValidation.TooLong("位置訊息的 title", Title, LineMessagingLimits.MaxLocationTitleLength));
+        }
+
+        return LineMessageValidation.IsTooLong(Address, LineMessagingLimits.MaxLocationAddressLength)
+            ? LineMessageValidation.InvalidMessage(
+                LineMessageValidation.TooLong("位置訊息的 address", Address, LineMessagingLimits.MaxLocationAddressLength))
+            : Result.Success();
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

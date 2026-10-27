@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -44,6 +46,20 @@ public sealed class UriAction : LineAction
     /// link.
     /// </remarks>
     public string? AltUriDesktop { get; set; }
+
+    /// <inheritdoc />
+    internal override Result ValidateBody(string location)
+    {
+        if (LineMessageValidation.CheckActionUri($"{location}(type=uri)的 uri", Uri) is { } problem)
+        {
+            return LineMessageValidation.InvalidAction(problem);
+        }
+
+        return LineMessageValidation.IsTooLong(AltUriDesktop, LineMessagingLimits.MaxActionUriLength)
+            ? LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type=uri)的 altUri.desktop", AltUriDesktop!, LineMessagingLimits.MaxActionUriLength))
+            : Result.Success();
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

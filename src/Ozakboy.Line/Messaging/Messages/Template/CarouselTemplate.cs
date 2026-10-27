@@ -76,6 +76,33 @@ public sealed class CarouselTemplate : LineTemplate
             }
         }
 
+        for (var index = 0; index < Columns.Count; index++)
+        {
+            var column = Columns[index];
+            var location = string.Create(CultureInfo.InvariantCulture, $"template.columns[{index}]");
+
+            var color = ValidateBackgroundColor(column.ImageBackgroundColor, location);
+            if (color.IsFailure)
+            {
+                return color;
+            }
+
+            if (column.DefaultAction is { } defaultAction)
+            {
+                var validated = defaultAction.Validate(LineMessagingLimits.MaxActionLabelLength, location + ".defaultAction");
+                if (validated.IsFailure)
+                {
+                    return validated;
+                }
+            }
+
+            var actions = ValidateActions(column.Actions, LineMessagingLimits.MaxActionLabelLength, location + ".actions");
+            if (actions.IsFailure)
+            {
+                return actions;
+            }
+        }
+
         return Result.Success();
     }
 

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages.Imagemap;
 
@@ -66,6 +67,34 @@ public abstract class LineImagemapAction
         Area.WriteTo(writer);
         writer.WriteEndObject();
     }
+
+    /// <summary>
+    /// 送出前的本地檢查:標籤長度,以及各型別自己的欄位規則。
+    /// The local check before sending: the label's length, plus each type's own field rules.
+    /// </summary>
+    /// <param name="location">動作所在位置的描述,例如 <c>actions[2]</c>。Where the action sits, such as <c>actions[2]</c>.</param>
+    /// <returns>
+    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidAction"/> 失敗。
+    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidAction"/> failure.
+    /// </returns>
+    internal Result Validate(string location)
+    {
+        if (LineMessageValidation.IsTooLong(Label, LineMessagingLimits.MaxImagemapActionLabelLength))
+        {
+            return LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type={Type})的 label", Label!, LineMessagingLimits.MaxImagemapActionLabelLength));
+        }
+
+        return ValidateBody(location);
+    }
+
+    /// <summary>
+    /// 檢查這個型別專屬的欄位;預設沒有額外規則。
+    /// Checks the fields specific to this type; by default there are no extra rules.
+    /// </summary>
+    /// <param name="location">動作所在位置的描述。A description of where the action sits.</param>
+    /// <returns>通過時為成功。Success when it passes.</returns>
+    internal virtual Result ValidateBody(string location) => Result.Success();
 
     /// <summary>
     /// 寫出這個型別專屬的欄位(不含 <c>type</c>、<c>label</c> 與 <c>area</c>)。

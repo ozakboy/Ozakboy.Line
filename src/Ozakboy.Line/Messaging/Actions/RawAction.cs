@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -69,6 +70,16 @@ public sealed class RawAction : LineAction
     /// </summary>
     /// <param name="writer">JSON 寫入器。The JSON writer.</param>
     internal override void WriteTo(Utf8JsonWriter writer) => Contents.WriteTo(writer);
+
+    /// <summary>
+    /// 原樣動作不做本地檢查:它是逃生口,內容與長度由呼叫端負責。
+    /// A raw action is not checked locally: it is the escape hatch, and its content and lengths are the caller's
+    /// responsibility.
+    /// </summary>
+    /// <param name="maxLabelLength">不使用。Unused.</param>
+    /// <param name="location">不使用。Unused.</param>
+    /// <returns>永遠為成功。Always success.</returns>
+    internal override Result Validate(int maxLabelLength, string location) => Result.Success();
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

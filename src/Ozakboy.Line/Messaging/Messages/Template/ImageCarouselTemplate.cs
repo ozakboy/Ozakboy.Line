@@ -26,12 +26,30 @@ public sealed class ImageCarouselTemplate : LineTemplate
     public IList<ImageCarouselColumn> Columns { get; } = [];
 
     /// <inheritdoc />
-    public override Result Validate() =>
-        Columns.Count is >= 1 and <= LineMessagingLimits.MaxCarouselColumns
-            ? Result.Success()
-            : Invalid(string.Create(
+    public override Result Validate()
+    {
+        if (Columns.Count is < 1 or > LineMessagingLimits.MaxCarouselColumns)
+        {
+            return Invalid(string.Create(
                 CultureInfo.InvariantCulture,
                 $"圖片輪播範本需帶 1 到 {LineMessagingLimits.MaxCarouselColumns} 欄,這次是 {Columns.Count} 欄。An image carousel template takes between 1 and {LineMessagingLimits.MaxCarouselColumns} columns; {Columns.Count} were supplied."));
+        }
+
+        // 圖片輪播的動作標籤上限比其他範本更嚴(12 字),別套用一般按鈕的 20。
+        // An image carousel's label limit is tighter than the other templates' (12 characters); not the usual 20.
+        for (var index = 0; index < Columns.Count; index++)
+        {
+            var validated = Columns[index].Action.Validate(
+                LineMessagingLimits.MaxImageCarouselActionLabelLength,
+                string.Create(CultureInfo.InvariantCulture, $"template.columns[{index}].action"));
+            if (validated.IsFailure)
+            {
+                return validated;
+            }
+        }
+
+        return Result.Success();
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

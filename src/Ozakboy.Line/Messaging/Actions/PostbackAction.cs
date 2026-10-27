@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -81,6 +83,13 @@ public sealed class PostbackAction : LineAction
     /// <see cref="InputOptionOpenKeyboard"/>.
     /// </summary>
     public string? FillInText { get; set; }
+
+    /// <inheritdoc />
+    internal override Result ValidateBody(string location) =>
+        LineMessageValidation.IsTooLong(Data, LineMessagingLimits.MaxPostbackDataLength)
+            ? LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type=postback)的 data", Data, LineMessagingLimits.MaxPostbackDataLength))
+            : Result.Success();
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

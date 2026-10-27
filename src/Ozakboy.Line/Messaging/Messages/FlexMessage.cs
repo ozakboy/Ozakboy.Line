@@ -91,6 +91,28 @@ public sealed class FlexMessage : LineMessage
         }
     }
 
+    /// <summary>
+    /// 送出前的本地檢查:替代文字不超過 400 字。
+    /// The local check before sending: the alternative text is at most 400 characters.
+    /// </summary>
+    /// <returns>
+    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidMessage"/> 失敗(快速回覆的問題照該處的代碼)。
+    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidMessage"/> failure (quick reply problems keep their own codes).
+    /// </returns>
+    public override Result Validate()
+    {
+        var baseResult = base.Validate();
+        if (baseResult.IsFailure)
+        {
+            return baseResult;
+        }
+
+        return LineMessageValidation.IsTooLong(AltText, LineMessagingLimits.MaxAltTextLength)
+            ? LineMessageValidation.InvalidMessage(
+                LineMessageValidation.TooLong("Flex 訊息的 altText", AltText, LineMessagingLimits.MaxAltTextLength))
+            : Result.Success();
+    }
+
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)
     {

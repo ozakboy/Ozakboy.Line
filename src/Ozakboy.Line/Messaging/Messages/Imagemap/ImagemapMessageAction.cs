@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages.Imagemap;
 
@@ -38,6 +39,13 @@ public sealed class ImagemapMessageAction : LineImagemapAction
     /// The text to send.
     /// </summary>
     public string Text { get; }
+
+    /// <inheritdoc />
+    internal override Result ValidateBody(string location) =>
+        LineMessageValidation.IsTooLong(Text, LineMessagingLimits.MaxImagemapMessageTextLength)
+            ? LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type=message)的 text", Text, LineMessagingLimits.MaxImagemapMessageTextLength))
+            : Result.Success();
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer) => writer.WriteString("text", Text);

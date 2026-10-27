@@ -80,7 +80,16 @@ public sealed class TemplateMessage : LineMessage
     public override Result Validate()
     {
         var quickReply = base.Validate();
-        return quickReply.IsFailure ? quickReply : Template.Validate();
+        if (quickReply.IsFailure)
+        {
+            return quickReply;
+        }
+
+        return LineMessageValidation.IsTooLong(AltText, LineMessagingLimits.MaxAltTextLength)
+            ? Error.Validation(
+                LineErrorCodes.InvalidTemplate,
+                LineMessageValidation.TooLong("範本訊息的 altText", AltText, LineMessagingLimits.MaxAltTextLength))
+            : Template.Validate();
     }
 
     /// <inheritdoc />

@@ -101,12 +101,32 @@ public sealed class ButtonsTemplate : LineTemplate
     public IList<LineAction> Actions { get; } = [];
 
     /// <inheritdoc />
-    public override Result Validate() =>
-        Actions.Count is >= 1 and <= LineMessagingLimits.MaxButtonsTemplateActions
-            ? Result.Success()
-            : Invalid(string.Create(
+    public override Result Validate()
+    {
+        if (Actions.Count is < 1 or > LineMessagingLimits.MaxButtonsTemplateActions)
+        {
+            return Invalid(string.Create(
                 CultureInfo.InvariantCulture,
                 $"按鈕範本需帶 1 到 {LineMessagingLimits.MaxButtonsTemplateActions} 個動作,這次是 {Actions.Count} 個。A buttons template takes between 1 and {LineMessagingLimits.MaxButtonsTemplateActions} actions; {Actions.Count} were supplied."));
+        }
+
+        var color = ValidateBackgroundColor(ImageBackgroundColor, "template");
+        if (color.IsFailure)
+        {
+            return color;
+        }
+
+        if (DefaultAction is { } defaultAction)
+        {
+            var validated = defaultAction.Validate(LineMessagingLimits.MaxActionLabelLength, "template.defaultAction");
+            if (validated.IsFailure)
+            {
+                return validated;
+            }
+        }
+
+        return ValidateActions(Actions, LineMessagingLimits.MaxActionLabelLength, "template.actions");
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

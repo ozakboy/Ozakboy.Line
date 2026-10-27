@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Messages;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -54,6 +56,47 @@ public abstract class LineAction
         WriteBody(writer);
         writer.WriteEndObject();
     }
+
+    /// <summary>
+    /// 送出前的本地檢查:標籤長度,以及各型別自己的欄位規則。
+    /// The local check before sending: the label's length, plus each type's own field rules.
+    /// </summary>
+    /// <param name="maxLabelLength">
+    /// 這個動作所在位置允許的標籤字數上限(快速回覆與範本按鈕是 20,圖片輪播是 12)。
+    /// The label limit where this action sits — 20 for quick replies and template buttons, 12 in an image carousel.
+    /// </param>
+    /// <param name="location">
+    /// 動作所在位置的描述,放進錯誤訊息,例如 <c>quickReply.items[2].action</c>。
+    /// A description of where the action sits, written into the error message, such as
+    /// <c>quickReply.items[2].action</c>.
+    /// </param>
+    /// <returns>
+    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidAction"/> 失敗。
+    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidAction"/> failure.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="RawAction"/> 覆寫成永遠通過:它是逃生口,內容由呼叫端負責。
+    /// <see cref="RawAction"/> overrides this to always pass: it is the escape hatch, and its content is the
+    /// caller's responsibility.
+    /// </remarks>
+    internal virtual Result Validate(int maxLabelLength, string location)
+    {
+        if (LineMessageValidation.IsTooLong(Label, maxLabelLength))
+        {
+            return LineMessageValidation.InvalidAction(
+                LineMessageValidation.TooLong($"{location}(type={Type})的 label", Label!, maxLabelLength));
+        }
+
+        return ValidateBody(location);
+    }
+
+    /// <summary>
+    /// 檢查這個型別專屬的欄位;預設沒有額外規則。
+    /// Checks the fields specific to this type; by default there are no extra rules.
+    /// </summary>
+    /// <param name="location">動作所在位置的描述。A description of where the action sits.</param>
+    /// <returns>通過時為成功。Success when it passes.</returns>
+    internal virtual Result ValidateBody(string location) => Result.Success();
 
     /// <summary>
     /// 寫出這個型別專屬的欄位(不含 <c>type</c> 與 <c>label</c>)。

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages;
 
@@ -55,6 +56,32 @@ public sealed class VideoMessage : LineMessage
     /// field is for one-to-one chats only: sent to a group or room, the message is rejected.
     /// </remarks>
     public string? TrackingId { get; set; }
+
+    /// <summary>
+    /// 送出前的本地檢查:兩個位址都必須是 https:// 而且不超過 2000 字。
+    /// The local check before sending: both addresses must be https:// and at most 2000 characters.
+    /// </summary>
+    /// <returns>
+    /// 通過時為成功,否則為 <see cref="LineErrorCodes.InvalidMessage"/> 失敗(快速回覆的問題照該處的代碼)。
+    /// Success when it passes, otherwise an <see cref="LineErrorCodes.InvalidMessage"/> failure (quick reply problems keep their own codes).
+    /// </returns>
+    public override Result Validate()
+    {
+        var baseResult = base.Validate();
+        if (baseResult.IsFailure)
+        {
+            return baseResult;
+        }
+
+        if (LineMessageValidation.CheckMediaUrl("影片訊息的 originalContentUrl", OriginalContentUrl) is { } original)
+        {
+            return LineMessageValidation.InvalidMessage(original);
+        }
+
+        return LineMessageValidation.CheckMediaUrl("影片訊息的 previewImageUrl", PreviewImageUrl) is { } preview
+            ? LineMessageValidation.InvalidMessage(preview)
+            : Result.Success();
+    }
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer)

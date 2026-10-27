@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
+using Ozakboy.Line.Messaging.Actions;
 
 namespace Ozakboy.Line.Messaging.Messages.Template;
 
@@ -71,6 +73,71 @@ public abstract class LineTemplate
     /// <returns>失敗。The failure.</returns>
     private protected static Result Invalid(string message) =>
         Error.Validation(LineErrorCodes.InvalidTemplate, message);
+
+    /// <summary>
+    /// 檢查一組動作:每個動作的標籤長度與欄位規則。
+    /// Checks a set of actions: every action's label length and field rules.
+    /// </summary>
+    /// <param name="actions">動作。The actions.</param>
+    /// <param name="maxLabelLength">標籤字數上限。The label limit.</param>
+    /// <param name="location">動作集合所在位置的描述,例如 <c>template.actions</c>。Where the actions sit, such as <c>template.actions</c>.</param>
+    /// <returns>通過時為成功。Success when they pass.</returns>
+    internal static Result ValidateActions(IList<LineAction> actions, int maxLabelLength, string location)
+    {
+        for (var index = 0; index < actions.Count; index++)
+        {
+            var result = actions[index].Validate(
+                maxLabelLength,
+                string.Create(CultureInfo.InvariantCulture, $"{location}[{index}]"));
+            if (result.IsFailure)
+            {
+                return result;
+            }
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// 檢查 <c>imageBackgroundColor</c>:有值時必須是 <c>#RRGGBB</c>。
+    /// Checks <c>imageBackgroundColor</c>: when set, it must be <c>#RRGGBB</c>.
+    /// </summary>
+    /// <param name="color">顏色字串。The colour string.</param>
+    /// <param name="location">欄位所在位置的描述。Where the field sits.</param>
+    /// <returns>沒有值或格式正確時為成功,否則為 <see cref="LineErrorCodes.InvalidTemplate"/> 失敗。Success when unset or well-formed, otherwise an <see cref="LineErrorCodes.InvalidTemplate"/> failure.</returns>
+    internal static Result ValidateBackgroundColor(string? color, string location)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+        {
+            return Result.Success();
+        }
+
+        var valid = color.Length == 7 && color[0] == '#' && IsHex(color.AsSpan(1));
+        return valid
+            ? Result.Success()
+            : Error.Validation(
+                LineErrorCodes.InvalidTemplate,
+                $"{location}.imageBackgroundColor 必須是 #RRGGBB 格式,實際是:{LineMessageValidation.Quote(color)}。{location}.imageBackgroundColor must be in #RRGGBB form, but is: {LineMessageValidation.Quote(color)}.");
+    }
+
+    /// <summary>
+    /// 判斷字串是否全為十六進位數字。
+    /// Tells whether a string is made up solely of hexadecimal digits.
+    /// </summary>
+    /// <param name="digits">字元。The characters.</param>
+    /// <returns>全部都是時為 <see langword="true"/>。<see langword="true"/> when they all are.</returns>
+    private static bool IsHex(ReadOnlySpan<char> digits)
+    {
+        foreach (var character in digits)
+        {
+            if (!char.IsAsciiHexDigit(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// 寫出 <c>actions</c> 陣列。

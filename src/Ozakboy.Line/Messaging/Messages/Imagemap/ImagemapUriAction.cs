@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Ozakboy.Core.Abstractions;
 
 namespace Ozakboy.Line.Messaging.Messages.Imagemap;
 
@@ -40,6 +41,12 @@ public sealed class ImagemapUriAction : LineImagemapAction
     /// The address to open.
     /// </summary>
     public string LinkUri { get; }
+
+    /// <inheritdoc />
+    internal override Result ValidateBody(string location) =>
+        LineMessageValidation.CheckActionUri($"{location}(type=uri)的 linkUri", LinkUri) is { } problem
+            ? LineMessageValidation.InvalidAction(problem)
+            : Result.Success();
 
     /// <inheritdoc />
     internal override void WriteBody(Utf8JsonWriter writer) => writer.WriteString("linkUri", LinkUri);
