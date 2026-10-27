@@ -32,4 +32,37 @@ public static class LineHttpClientNames
     /// channel's token.
     /// </summary>
     public const string Liff = "Ozakboy.Line.Liff";
+
+    /// <summary>
+    /// 某個 Messaging channel 的具名用戶端名稱;空字串(預設 channel)回 <see cref="Messaging"/>。
+    /// The named client for one Messaging channel; the empty string (the default channel) yields
+    /// <see cref="Messaging"/>.
+    /// </summary>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
+    /// <returns>具名用戶端名稱。The named client's name.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="channelName"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="channelName"/> is <see langword="null"/>.
+    /// </exception>
+    public static string ForMessaging(string channelName)
+    {
+        ArgumentNullException.ThrowIfNull(channelName);
+        return channelName.Length == 0 ? Messaging : Messaging + ":" + channelName;
+    }
+
+    /// <summary>
+    /// 某個 LIFF channel 的具名用戶端名稱;空字串(預設 channel)回 <see cref="Liff"/>。
+    /// The named client for one LIFF channel; the empty string (the default channel) yields <see cref="Liff"/>.
+    /// </summary>
+    /// <param name="channelName">channel 名稱。The channel name.</param>
+    /// <returns>具名用戶端名稱。The named client's name.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="channelName"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="channelName"/> is <see langword="null"/>.
+    /// </exception>
+    public static string ForLiff(string channelName)
+    {
+        ArgumentNullException.ThrowIfNull(channelName);
+        return channelName.Length == 0 ? Liff : Liff + ":" + channelName;
+    }
 }

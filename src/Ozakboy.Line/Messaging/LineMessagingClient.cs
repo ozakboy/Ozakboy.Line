@@ -25,7 +25,7 @@ namespace Ozakboy.Line.Messaging;
 public sealed partial class LineMessagingClient : ILineMessagingClient
 {
     private readonly HttpPipelineClient _http;
-    private readonly IOptions<LineMessagingOptions> _options;
+    private readonly Func<LineMessagingOptions> _options;
     private readonly ILogger<LineMessagingClient>? _logger;
 
     /// <summary>
@@ -48,11 +48,45 @@ public sealed partial class LineMessagingClient : ILineMessagingClient
         ArgumentNullException.ThrowIfNull(options);
 
         _http = http;
-        _options = options;
+        _options = () => options.Value;
+        ChannelName = Microsoft.Extensions.Options.Options.DefaultName;
         _logger = logger;
     }
 
-    private LineMessagingOptions Options => _options.Value;
+    /// <summary>
+    /// 建立綁定到某個具名 channel 的用戶端:每次呼叫都向 <paramref name="options"/> 取該名稱當下的設定。
+    /// Creates a client bound to one named channel; every call reads that name's current settings from
+    /// <paramref name="options"/>.
+    /// </summary>
+    /// <param name="http">管線用戶端。The pipeline client.</param>
+    /// <param name="options">Messaging channel 設定的監視器。The monitor of the Messaging channel settings.</param>
+    /// <param name="channelName">channel 名稱;空字串是預設 channel。The channel name; the empty string is the default channel.</param>
+    /// <param name="logger">記錄器,可為 <see langword="null"/>。The logger, which may be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="http"/>、<paramref name="options"/> 或 <paramref name="channelName"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="http"/>, <paramref name="options"/> or <paramref name="channelName"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    public LineMessagingClient(
+        HttpPipelineClient http,
+        IOptionsMonitor<LineMessagingOptions> options,
+        string channelName,
+        ILogger<LineMessagingClient>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(channelName);
+
+        _http = http;
+        _options = () => options.Get(channelName);
+        ChannelName = channelName;
+        _logger = logger;
+    }
+
+    /// <inheritdoc />
+    public string ChannelName { get; }
+
+    private LineMessagingOptions Options => _options();
 
     /// <inheritdoc />
     public async Task<Result<IReadOnlyList<LineSentMessage>>> PushAsync(

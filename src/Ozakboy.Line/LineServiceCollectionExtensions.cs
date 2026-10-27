@@ -112,25 +112,12 @@ public static class LineServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
-        services.Configure(configure);
-
-        var probe = new LineMessagingOptions();
-        configure(probe);
-
-        services.AddHttpClient(LineHttpClientNames.Messaging)
-            .AddOzakboyHttpPipeline(options =>
-            {
-                ConfigureLinePipeline(options);
-                AddKnownSecret(options, probe.ChannelAccessToken);
-                AddKnownSecret(options, probe.ChannelSecret);
-                configurePipeline?.Invoke(options);
-            });
-
-        services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<ILineMessagingClient>(provider => new LineMessagingClient(
-            provider.CreateOzakboyHttpPipelineClient(LineHttpClientNames.Messaging),
-            provider.GetRequiredService<IOptions<LineMessagingOptions>>(),
-            provider.GetService<ILogger<LineMessagingClient>>()));
+        // 未具名註冊 = 預設 channel(空字串名稱)+ 一個 unkeyed 的 ILineMessagingClient,後者就是 keyed("") 的同一個實例。
+        // An unnamed registration is the default channel (the empty-string name) plus an unkeyed
+        // ILineMessagingClient, which resolves to the very same instance as keyed("").
+        services.AddLineMessaging(Options.DefaultName, configure, configurePipeline);
+        services.AddSingleton<ILineMessagingClient>(provider =>
+            provider.GetRequiredKeyedService<ILineMessagingClient>(Options.DefaultName));
 
         return services;
     }
@@ -159,8 +146,105 @@ public static class LineServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 兩個用戶端共用的管線設定。
-    /// The pipeline settings shared by both clients.
+    /// 註冊一個具名的 LINE Messaging API 用戶端(多 channel)。
+    /// Registers a named LINE Messaging API client, for multi-channel setups.
+    /// </summary>
+    /// <param name="services">服務集合。The service collection.</param>
+    /// <param name="name">channel 名稱;空字串是預設 channel。The channel name; the empty string is the default channel.</param>
+    /// <param name="configure">設定這個 Messaging channel。Configures this Messaging channel.</param>
+    /// <param name="configurePipeline">額外調整這個 channel 的 HTTP 管線。Further adjusts this channel's HTTP pipeline.</param>
+    /// <returns>服務集合本身。The service collection.</returns>
+    /// <remarks>
+    /// <para>
+    /// 具名用戶端只註冊成 keyed 服務(<c>GetRequiredKeyedService&lt;ILineMessagingClient&gt;(name)</c>)並可經
+    /// <see cref="ILineMessagingClientFactory"/> 取得;不會註冊 unkeyed 的 <see cref="ILineMessagingClient"/>。
+    /// Named clients are registered only as keyed services
+    /// (<c>GetRequiredKeyedService&lt;ILineMessagingClient&gt;(name)</c>) and are reachable through
+    /// <see cref="ILineMessagingClientFactory"/>; no unkeyed <see cref="ILineMessagingClient"/> is registered.
+    /// </para>
+    /// <para>
+    /// 一個名字一個用戶端:重複註冊同名 channel 時,後者的設定與用戶端整個取代前者(不是欄位疊加)。
+    /// 每個 channel 有自己的具名 HttpClient(見 <see cref="LineHttpClientNames.ForMessaging(string)"/>),
+    /// 祕密遮罩也逐 channel 登記。
+    /// One name, one client: registering the same name again replaces the earlier settings and client wholesale
+    /// rather than stacking fields. Each channel has its own named HttpClient (see
+    /// <see cref="LineHttpClientNames.ForMessaging(string)"/>), and secret masking is registered per channel.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="services"/>、<paramref name="name"/> 或 <paramref name="configure"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="services"/>, <paramref name="name"/> or <paramref name="configure"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    public static IServiceCollection AddLineMessaging(
+        this IServiceCollection services,
+        string name,
+        Action<LineMessagingOptions> configure,
+        Action<HttpPipelineOptions>? configurePipeline = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        LineChannelRegistrations.ReplaceConfigure(services, name, configure);
+
+        var probe = new LineMessagingOptions();
+        configure(probe);
+
+        var httpClientName = LineHttpClientNames.ForMessaging(name);
+        services.AddHttpClient(httpClientName)
+            .AddOzakboyHttpPipeline(options =>
+            {
+                ConfigureLinePipeline(options);
+                AddKnownSecret(options, probe.ChannelAccessToken);
+                AddKnownSecret(options, probe.ChannelSecret);
+                configurePipeline?.Invoke(options);
+            });
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ILineMessagingClientFactory, LineMessagingClientFactory>();
+        LineChannelRegistrations.ReplaceKeyed<ILineMessagingClient>(
+            services,
+            name,
+            (provider, _) => new LineMessagingClient(
+                provider.CreateOzakboyHttpPipelineClient(httpClientName),
+                provider.GetRequiredService<IOptionsMonitor<LineMessagingOptions>>(),
+                name,
+                provider.GetService<ILogger<LineMessagingClient>>()));
+
+        return services;
+    }
+
+    /// <summary>
+    /// 從設定區段註冊一個具名的 LINE Messaging API 用戶端(多 channel)。
+    /// Registers a named LINE Messaging API client from a configuration section, for multi-channel setups.
+    /// </summary>
+    /// <param name="services">服務集合。The service collection.</param>
+    /// <param name="name">channel 名稱;空字串是預設 channel。The channel name; the empty string is the default channel.</param>
+    /// <param name="section">設定區段。The configuration section.</param>
+    /// <param name="configurePipeline">額外調整這個 channel 的 HTTP 管線。Further adjusts this channel's HTTP pipeline.</param>
+    /// <returns>服務集合本身。The service collection.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="services"/>、<paramref name="name"/> 或 <paramref name="section"/> 為 <see langword="null"/> 時擲出。
+    /// Thrown when <paramref name="services"/>, <paramref name="name"/> or <paramref name="section"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    public static IServiceCollection AddLineMessaging(
+        this IServiceCollection services,
+        string name,
+        IConfiguration section,
+        Action<HttpPipelineOptions>? configurePipeline = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(section);
+
+        return services.AddLineMessaging(name, section.Bind, configurePipeline);
+    }
+
+    /// <summary>
+    /// 各用戶端共用的管線設定。
+    /// The pipeline settings shared by the clients.
     /// </summary>
     /// <param name="options">管線設定。The pipeline options.</param>
     /// <remarks>
