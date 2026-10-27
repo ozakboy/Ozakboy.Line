@@ -43,6 +43,10 @@ public sealed class ImagemapUriAction : LineImagemapAction
     public string LinkUri { get; }
 
     /// <inheritdoc />
+    internal override LineImagemapAction WithArea(LineImagemapArea area) =>
+        new ImagemapUriAction(LinkUri, area) { Label = Label };
+
+    /// <inheritdoc />
     internal override Result ValidateBody(string location) =>
         LineMessageValidation.CheckActionUri($"{location}(type=uri)的 linkUri", LinkUri) is { } problem
             ? LineMessageValidation.InvalidAction(problem)

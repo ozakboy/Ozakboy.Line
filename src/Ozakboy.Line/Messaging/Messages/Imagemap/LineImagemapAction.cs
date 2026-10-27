@@ -97,6 +97,14 @@ public abstract class LineImagemapAction
     internal virtual Result ValidateBody(string location) => Result.Success();
 
     /// <summary>
+    /// 複製成一個範圍不同的動作(標籤與型別專屬欄位照舊),原物件不動。
+    /// Copies this into an action with a different area, label and type-specific fields kept; the original is untouched.
+    /// </summary>
+    /// <param name="area">新的範圍。The new area.</param>
+    /// <returns>新的動作。The new action.</returns>
+    internal abstract LineImagemapAction WithArea(LineImagemapArea area);
+
+    /// <summary>
     /// 寫出這個型別專屬的欄位(不含 <c>type</c>、<c>label</c> 與 <c>area</c>)。
     /// Writes the fields specific to this type, excluding <c>type</c>, <c>label</c> and <c>area</c>.
     /// </summary>

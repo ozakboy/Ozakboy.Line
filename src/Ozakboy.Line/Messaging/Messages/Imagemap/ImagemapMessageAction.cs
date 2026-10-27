@@ -41,6 +41,10 @@ public sealed class ImagemapMessageAction : LineImagemapAction
     public string Text { get; }
 
     /// <inheritdoc />
+    internal override LineImagemapAction WithArea(LineImagemapArea area) =>
+        new ImagemapMessageAction(Text, area) { Label = Label };
+
+    /// <inheritdoc />
     internal override Result ValidateBody(string location) =>
         LineMessageValidation.IsTooLong(Text, LineMessagingLimits.MaxImagemapMessageTextLength)
             ? LineMessageValidation.InvalidAction(

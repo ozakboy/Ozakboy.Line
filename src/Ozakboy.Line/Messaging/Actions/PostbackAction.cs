@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json;
 using Ozakboy.Core.Abstractions;
 using Ozakboy.Line.Messaging.Messages;
+using Ozakboy.Line.Postback;
 
 namespace Ozakboy.Line.Messaging.Actions;
 
@@ -49,6 +50,53 @@ public sealed class PostbackAction : LineAction
 
         Data = data;
         DisplayText = displayText;
+    }
+
+    /// <summary>
+    /// 把(可能超過 300 字的)資料存進暫存儲存體,用代碼建立回傳動作。
+    /// Stages data that may exceed 300 characters in a store and creates a postback action carrying the token.
+    /// </summary>
+    /// <param name="store">暫存儲存體。The staging store.</param>
+    /// <param name="label">動作標籤。The action label.</param>
+    /// <param name="longData">要暫存的資料。The data to stage.</param>
+    /// <param name="displayText">要不要在聊天室顯示一段文字。Text to show in the chat, or <see langword="null"/>.</param>
+    /// <param name="timeToLive">存活時間;<see langword="null"/> 時用儲存體的預設值。The time to live, or <see langword="null"/> for the store's default.</param>
+    /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
+    /// <returns>
+    /// 成功時為 <see cref="Data"/> 是 <see cref="LinePostbackDataToken"/> 代碼的動作;儲存失敗(例如
+    /// <see cref="LineErrorCodes.PostbackDataTooLong"/>)時原樣回傳那個失敗。
+    /// On success, an action whose <see cref="Data"/> is a <see cref="LinePostbackDataToken"/> token; a storage
+    /// failure, such as <see cref="LineErrorCodes.PostbackDataTooLong"/>, is returned as is.
+    /// </returns>
+    /// <remarks>
+    /// <paramref name="longData"/> 即使不超過 300 字<b>也照存</b>:行為一致、可預測 —— 同一段程式碼不會因為
+    /// 資料剛好變長一點就從「直接帶資料」變成「帶代碼」,webhook 端的處理(<see cref="LinePostbackDataResolver"/>)
+    /// 也就不必猜。代價是短資料也會過期;不想要這個代價的就直接用建構子。
+    /// <paramref name="longData"/> is staged <b>even when it is within 300 characters</b>: the behaviour stays
+    /// consistent and predictable — the same code does not flip from "carry the data" to "carry a token" because
+    /// the data grew slightly, so the webhook side (<see cref="LinePostbackDataResolver"/>) never has to guess. The
+    /// price is that short data expires too; use the constructor to avoid it.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="store"/> 為 <see langword="null"/>。<paramref name="store"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="longData"/> 為 <see langword="null"/> 或空白。<paramref name="longData"/> is <see langword="null"/> or blank.</exception>
+    public static async Task<Result<PostbackAction>> CreateStoredAsync(
+        ILinePostbackDataStore store,
+        string label,
+        string longData,
+        string? displayText = null,
+        TimeSpan? timeToLive = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(longData);
+
+        var token = await store.StoreAsync(longData, timeToLive, cancellationToken).ConfigureAwait(false);
+        if (token.IsFailure)
+        {
+            return Result.Failure<PostbackAction>(token.Error!);
+        }
+
+        return Result.Success(new PostbackAction(token.GetValueOrThrow(), displayText) { Label = label });
     }
 
     /// <inheritdoc />
