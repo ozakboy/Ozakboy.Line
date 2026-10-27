@@ -10,8 +10,8 @@ namespace Ozakboy.Line.Mcp;
 public static class LineMcpServerBuilderExtensions
 {
     /// <summary>
-    /// 把本套件的六組工具全部加進去。
-    /// Adds all six of this package's tool sets.
+    /// 把本套件的七組工具全部加進去。
+    /// Adds all seven of this package's tool sets.
     /// </summary>
     /// <param name="builder">MCP server 建構器。The MCP server builder.</param>
     /// <returns>同一個建構器,方便串接。The same builder, for chaining.</returns>
@@ -33,7 +33,8 @@ public static class LineMcpServerBuilderExtensions
     /// 這比「工具根本不出現」清楚:AI 讀得到「有這個功能,只是這個站沒開」,而不是自己猜為什麼做不到。
     /// The auto reply and template tools are mounted even when the host has not registered those features, and
     /// answer that the feature is off. That says more than their absence would: the AI reads that the capability
-    /// exists and this site has not enabled it, rather than guessing why it cannot do something.
+    /// exists and this site has not enabled it, rather than guessing why it cannot do something. The LIFF tools
+    /// follow the same rule when <c>AddLineLiff</c> has not been called.
     /// </para>
     /// </remarks>
     public static IMcpServerBuilder WithLineTools(this IMcpServerBuilder builder)
@@ -45,6 +46,7 @@ public static class LineMcpServerBuilderExtensions
             .WithTools<LineSendTools>()
             .WithTools<LineOutboxTools>()
             .WithTools<LineRichMenuTools>()
+            .WithTools<LineLiffTools>()
             .WithTools<LineAutoReplyTools>()
             .WithTools<LineTemplateTools>();
     }

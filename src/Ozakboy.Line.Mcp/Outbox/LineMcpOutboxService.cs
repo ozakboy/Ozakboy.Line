@@ -187,7 +187,7 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
                 LineMcpOutboxKind.Push => await SendPushAsync(root, cancellationToken).ConfigureAwait(false),
                 LineMcpOutboxKind.Multicast => await SendMulticastAsync(root, cancellationToken).ConfigureAwait(false),
                 LineMcpOutboxKind.Broadcast => await _messaging
-                    .BroadcastRawJsonAsync(ReadRaw(root, "messages"), options: null, cancellationToken)
+                    .BroadcastRawJsonAsync(ReadRaw(root, "messages"), ReadPushOptions(root), cancellationToken)
                     .ConfigureAwait(false),
                 _ => await ReplaceRichMenuAsync(root, cancellationToken).ConfigureAwait(false),
             };
@@ -210,7 +210,7 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
     private async Task<Result> SendPushAsync(JsonElement root, CancellationToken cancellationToken)
     {
         var pushed = await _messaging
-            .PushRawJsonAsync(ReadString(root, "to"), ReadRaw(root, "messages"), options: null, cancellationToken)
+            .PushRawJsonAsync(ReadString(root, "to"), ReadRaw(root, "messages"), ReadPushOptions(root), cancellationToken)
             .ConfigureAwait(false);
 
         return pushed.ToResult();
@@ -244,7 +244,7 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
         var messages = LineMcpMessages.Parse(ReadRaw(root, "messages"));
         return messages.IsFailure
             ? messages.ToResult()
-            : await _messaging.MulticastAsync(userIds, messages.GetValueOrThrow(), options: null, cancellationToken).ConfigureAwait(false);
+            : await _messaging.MulticastAsync(userIds, messages.GetValueOrThrow(), ReadPushOptions(root), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -392,6 +392,15 @@ public sealed class LineMcpOutboxService : ILineMcpOutboxService
     /// <returns>原始 JSON。The raw JSON.</returns>
     private static string ReadRaw(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) ? value.GetRawText() : "[]";
+
+    /// <summary>
+    /// 從待發內容讀出送出選項;沒有統計單位時為 <see langword="null"/>。
+    /// Reads the send options from the payload, or <see langword="null"/> when there is no aggregation unit.
+    /// </summary>
+    /// <param name="root">根物件。The root object.</param>
+    /// <returns>送出選項。The send options.</returns>
+    private static LinePushOptions? ReadPushOptions(JsonElement root) =>
+        LineMcpAggregationUnit.ToOptions(NullIfEmpty(ReadString(root, LineMcpAggregationUnit.PayloadField)));
 
     /// <summary>
     /// 空字串轉 <see langword="null"/>。

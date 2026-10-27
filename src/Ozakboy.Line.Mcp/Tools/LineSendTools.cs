@@ -61,6 +61,7 @@ public sealed class LineSendTools
     /// <param name="to">使用者、群組或聊天室識別碼。A user, group, or room identifier.</param>
     /// <param name="text">純文字內容。The plain text.</param>
     /// <param name="messagesJson">訊息陣列 JSON。The message array's JSON.</param>
+    /// <param name="customAggregationUnit">統計單位名稱(選填)。The aggregation unit name (optional).</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>結果的 JSON。The result as JSON.</returns>
     [McpServerTool(Name = "line_send_push")]
@@ -71,6 +72,7 @@ public sealed class LineSendTools
         [Description("收件對象識別碼(使用者 U…、群組 C…、聊天室 R…)")] string to,
         [Description("純文字內容(與 messagesJson 擇一)")] string? text = null,
         [Description("LINE 訊息陣列 JSON,1~5 則(與 text 擇一)")] string? messagesJson = null,
+        [Description("統計單位名稱(選填),1~30 個英數字元或底線;之後可用統計工具依此單位查互動成效")] string? customAggregationUnit = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(to))
@@ -82,10 +84,13 @@ public sealed class LineSendTools
             LineMcpOutboxKind.Push,
             text,
             messagesJson,
+            customAggregationUnit,
             writer => writer.WriteString("to", to),
             async body =>
             {
-                var pushed = await _messaging.PushRawJsonAsync(to, body, options: null, cancellationToken).ConfigureAwait(false);
+                var pushed = await _messaging
+                    .PushRawJsonAsync(to, body, LineMcpAggregationUnit.ToOptions(customAggregationUnit), cancellationToken)
+                    .ConfigureAwait(false);
                 return pushed.ToResult();
             },
             cancellationToken);
@@ -98,6 +103,7 @@ public sealed class LineSendTools
     /// <param name="userIds">使用者識別碼。The user identifiers.</param>
     /// <param name="text">純文字內容。The plain text.</param>
     /// <param name="messagesJson">訊息陣列 JSON。The message array's JSON.</param>
+    /// <param name="customAggregationUnit">統計單位名稱(選填)。The aggregation unit name (optional).</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>結果的 JSON。The result as JSON.</returns>
     [McpServerTool(Name = "line_send_multicast")]
@@ -108,6 +114,7 @@ public sealed class LineSendTools
         [Description("使用者識別碼陣列,1~500 個")] string[] userIds,
         [Description("純文字內容(與 messagesJson 擇一)")] string? text = null,
         [Description("LINE 訊息陣列 JSON,1~5 則(與 text 擇一)")] string? messagesJson = null,
+        [Description("統計單位名稱(選填),1~30 個英數字元或底線;之後可用統計工具依此單位查互動成效")] string? customAggregationUnit = null,
         CancellationToken cancellationToken = default)
     {
         if (userIds is null || userIds.Length == 0)
@@ -125,6 +132,7 @@ public sealed class LineSendTools
             LineMcpOutboxKind.Multicast,
             text,
             messagesJson,
+            customAggregationUnit,
             writer =>
             {
                 writer.WriteStartArray("userIds");
@@ -140,7 +148,9 @@ public sealed class LineSendTools
                 var messages = LineMcpMessages.Parse(body);
                 return messages.IsFailure
                     ? messages.ToResult()
-                    : await _messaging.MulticastAsync(userIds, messages.GetValueOrThrow(), options: null, cancellationToken).ConfigureAwait(false);
+                    : await _messaging
+                        .MulticastAsync(userIds, messages.GetValueOrThrow(), LineMcpAggregationUnit.ToOptions(customAggregationUnit), cancellationToken)
+                        .ConfigureAwait(false);
             },
             cancellationToken);
     }
@@ -151,6 +161,7 @@ public sealed class LineSendTools
     /// </summary>
     /// <param name="text">純文字內容。The plain text.</param>
     /// <param name="messagesJson">訊息陣列 JSON。The message array's JSON.</param>
+    /// <param name="customAggregationUnit">統計單位名稱(選填)。The aggregation unit name (optional).</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
     /// <returns>結果的 JSON。The result as JSON.</returns>
     [McpServerTool(Name = "line_send_broadcast")]
@@ -160,13 +171,15 @@ public sealed class LineSendTools
     public Task<string> SendBroadcastAsync(
         [Description("純文字內容(與 messagesJson 擇一)")] string? text = null,
         [Description("LINE 訊息陣列 JSON,1~5 則(與 text 擇一)")] string? messagesJson = null,
+        [Description("統計單位名稱(選填),1~30 個英數字元或底線;之後可用統計工具依此單位查互動成效")] string? customAggregationUnit = null,
         CancellationToken cancellationToken = default) =>
         QueueOrSendAsync(
             LineMcpOutboxKind.Broadcast,
             text,
             messagesJson,
+            customAggregationUnit,
             _ => { },
-            body => _messaging.BroadcastRawJsonAsync(body, options: null, cancellationToken),
+            body => _messaging.BroadcastRawJsonAsync(body, LineMcpAggregationUnit.ToOptions(customAggregationUnit), cancellationToken),
             cancellationToken);
 
     /// <summary>
@@ -177,6 +190,11 @@ public sealed class LineSendTools
     /// <param name="kind">項目種類。The item's kind.</param>
     /// <param name="text">純文字內容。The plain text.</param>
     /// <param name="messagesJson">訊息陣列 JSON。The message array's JSON.</param>
+    /// <param name="customAggregationUnit">
+    /// 統計單位名稱;有值時隨待發項目一起存,核准時才帶進送出選項。
+    /// The aggregation unit name; when set it is stored with the outbox item and only goes into the send options at
+    /// approval time.
+    /// </param>
     /// <param name="writeTarget">寫出收件對象欄位的委派。The delegate writing the recipient fields.</param>
     /// <param name="send">直接送出時要呼叫的動作。What to call when sending directly.</param>
     /// <param name="cancellationToken">取消權杖。The cancellation token.</param>
@@ -185,10 +203,16 @@ public sealed class LineSendTools
         LineMcpOutboxKind kind,
         string? text,
         string? messagesJson,
+        string? customAggregationUnit,
         Action<Utf8JsonWriter> writeTarget,
         Func<string, Task<Result>> send,
         CancellationToken cancellationToken)
     {
+        if (LineMcpAggregationUnit.Validate(customAggregationUnit) is { } unitProblem)
+        {
+            return LineMcpJson.Error(unitProblem);
+        }
+
         var composed = LineMcpMessages.Compose(text, messagesJson);
         if (composed.IsFailure)
         {
@@ -211,8 +235,10 @@ public sealed class LineSendTools
         var item = new LineMcpOutboxItem
         {
             Kind = kind,
-            PayloadJson = BuildPayload(body, writeTarget),
-            Summary = LineMcpMessages.Summarize(body),
+            PayloadJson = BuildPayload(body, customAggregationUnit, writeTarget),
+            Summary = string.IsNullOrWhiteSpace(customAggregationUnit)
+                ? LineMcpMessages.Summarize(body)
+                : $"{LineMcpMessages.Summarize(body)}(統計單位:{customAggregationUnit})",
             Status = LineMcpOutboxStatus.PendingReview,
             CreatedAt = now,
         };
@@ -264,9 +290,10 @@ public sealed class LineSendTools
     /// Builds the outbox item's payload JSON.
     /// </summary>
     /// <param name="messagesJson">訊息陣列 JSON。The message array's JSON.</param>
+    /// <param name="customAggregationUnit">統計單位名稱。The aggregation unit name.</param>
     /// <param name="writeTarget">寫出收件對象欄位的委派。The delegate writing the recipient fields.</param>
     /// <returns>內容 JSON。The payload JSON.</returns>
-    private static string BuildPayload(string messagesJson, Action<Utf8JsonWriter> writeTarget)
+    private static string BuildPayload(string messagesJson, string? customAggregationUnit, Action<Utf8JsonWriter> writeTarget)
     {
         using var document = JsonDocument.Parse(messagesJson);
         using var buffer = new MemoryStream();
@@ -277,6 +304,15 @@ public sealed class LineSendTools
             writeTarget(writer);
             writer.WritePropertyName("messages");
             document.RootElement.WriteTo(writer);
+
+            // 舊的待發項目沒有這個欄位,讀取端把「沒有」當成不帶統計單位,所以不必搬資料。
+            // Older outbox items carry no such field and the reader treats its absence as no unit, so nothing
+            // needs migrating.
+            if (!string.IsNullOrWhiteSpace(customAggregationUnit))
+            {
+                writer.WriteString(LineMcpAggregationUnit.PayloadField, customAggregationUnit);
+            }
+
             writer.WriteEndObject();
         }
 

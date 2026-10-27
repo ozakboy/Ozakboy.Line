@@ -58,6 +58,14 @@ internal sealed partial class FakeLineMessagingClient : ILineMessagingClient
     internal List<(LineRichMenu Menu, int ImageBytes, string ContentType, LineRichMenuReplaceOptions? Options)> Replacements { get; } = [];
 
     /// <summary>
+    /// 每一次 <see cref="PushRawJsonAsync"/> / <see cref="MulticastAsync"/> / <see cref="BroadcastRawJsonAsync"/>
+    /// 收到的送出選項,依呼叫順序。
+    /// The send options every <see cref="PushRawJsonAsync"/>, <see cref="MulticastAsync"/> and
+    /// <see cref="BroadcastRawJsonAsync"/> call received, in call order.
+    /// </summary>
+    internal List<LinePushOptions?> SentOptions { get; } = [];
+
+    /// <summary>
     /// 送出類方法要回的失敗;為 <see langword="null"/> 時一律成功。
     /// The failure the sending methods answer with, or <see langword="null"/> for success.
     /// </summary>
@@ -91,6 +99,7 @@ internal sealed partial class FakeLineMessagingClient : ILineMessagingClient
         CancellationToken cancellationToken = default)
     {
         Pushes.Add((to, messagesJson));
+        SentOptions.Add(options);
         return Task.FromResult(SendFailure is null
             ? Result.Success<IReadOnlyList<LineSentMessage>>([])
             : Result.Failure<IReadOnlyList<LineSentMessage>>(SendFailure));
@@ -104,6 +113,7 @@ internal sealed partial class FakeLineMessagingClient : ILineMessagingClient
         CancellationToken cancellationToken = default)
     {
         Multicasts.Add((to, messages.Count));
+        SentOptions.Add(options);
         return Task.FromResult(Sent());
     }
 
@@ -126,6 +136,7 @@ internal sealed partial class FakeLineMessagingClient : ILineMessagingClient
         CancellationToken cancellationToken = default)
     {
         Broadcasts.Add(messagesJson);
+        SentOptions.Add(options);
         return Task.FromResult(Sent());
     }
 
